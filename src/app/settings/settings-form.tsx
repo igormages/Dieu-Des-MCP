@@ -183,8 +183,24 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
   },
 };
 
-function HelpModal({ serviceKey, label, onClose }: { serviceKey: string; label: string; onClose: () => void }) {
+function HelpModal({
+  serviceKey,
+  label,
+  fields,
+  kvReady,
+  onClose,
+  onSave,
+}: {
+  serviceKey: string;
+  label: string;
+  fields: FieldDef[];
+  kvReady: boolean;
+  onClose: () => void;
+  onSave: (values: Record<string, string>) => Promise<void>;
+}) {
   const help = SERVICE_HELP[serviceKey];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -192,19 +208,23 @@ function HelpModal({ serviceKey, label, onClose }: { serviceKey: string; label: 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  async function handleSave() {
+    setSaving(true);
+    await onSave(values);
+    setSaving(false);
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-white shadow-xl"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h3 className="font-semibold text-gray-900">
-            Comment configurer {label}
-          </h3>
+        <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
+          <h3 className="font-semibold text-gray-900">Configurer {label}</h3>
           <button
             onClick={onClose}
             className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
@@ -215,10 +235,12 @@ function HelpModal({ serviceKey, label, onClose }: { serviceKey: string; label: 
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
-          {help ? (
-            <>
-              <ol className="space-y-3">
+        <div className="px-6 py-5 space-y-5">
+          {/* Steps */}
+          {help && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Comment obtenir les clés</p>
+              <ol className="space-y-2.5">
                 {help.steps.map((step, i) => (
                   <li key={i} className="flex gap-3 text-sm text-gray-700">
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
@@ -235,22 +257,48 @@ function HelpModal({ serviceKey, label, onClose }: { serviceKey: string; label: 
                   </li>
                 ))}
               </ol>
-
               <a
                 href={help.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
                 {help.urlLabel}
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                 </svg>
               </a>
-            </>
-          ) : (
-            <p className="text-sm text-gray-500">Aucune aide disponible pour ce service.</p>
+            </div>
           )}
+
+          {/* Divider */}
+          <div className="border-t border-gray-100" />
+
+          {/* Fields */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Vos clés</p>
+            {fields.map((field) => (
+              <div key={field.key}>
+                <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
+                <input
+                  type="password"
+                  placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
+                  value={values[field.key] || ""}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+                  disabled={!kvReady}
+                />
+              </div>
+            ))}
+
+            <button
+              onClick={handleSave}
+              disabled={saving || !kvReady}
+              className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Enregistrement..." : "Enregistrer"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -371,7 +419,40 @@ export function SettingsForm() {
         <HelpModal
           serviceKey={helpOpen}
           label={data.services[helpOpen].label}
+          fields={data.services[helpOpen].fields}
+          kvReady={data.kvReady}
           onClose={() => setHelpOpen(null)}
+          onSave={async (values) => {
+            const fields = data.services[helpOpen].fields;
+            for (const f of fields) {
+              if (!values[f.key]?.trim()) {
+                showMessage("error", `Le champ "${f.label}" est requis`);
+                return;
+              }
+            }
+            setSaving(helpOpen);
+            const res = await fetch("/api/keys", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ service: helpOpen, keys: values }),
+            });
+            if (res.ok) {
+              showMessage("success", `${data.services[helpOpen].label} configuré`);
+              await fetchData();
+              setHelpOpen(null);
+              const key = helpOpen;
+              setRecentlySaved((prev) => new Set(prev).add(key));
+              clearTimeout(moveTimers.current[key]);
+              moveTimers.current[key] = setTimeout(() => {
+                setRecentlySaved((prev) => { const next = new Set(prev); next.delete(key); return next; });
+                setExpanded((prev) => ({ ...prev, [key]: false }));
+              }, 10000);
+            } else {
+              const err = await res.json();
+              showMessage("error", err.error || "Erreur lors de la sauvegarde");
+            }
+            setSaving(null);
+          }}
         />
       )}
 
