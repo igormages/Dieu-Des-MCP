@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createSign, createHmac, createHash } from "crypto";
+import { createSign, createHash } from "crypto";
 
 type Keys = Record<string, string>;
 
@@ -39,40 +39,6 @@ async function testApple(keys: Keys) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.errors?.[0]?.detail ?? `Erreur ${res.status}`);
-  }
-}
-
-// ── AWS ────────────────────────────────────────────────────────────────────
-async function testAws(keys: Keys) {
-  const region = "us-east-1";
-  const host = "ce.us-east-1.amazonaws.com";
-  const now = new Date();
-  const dateTime = now.toISOString().replace(/[:-]/g, "").replace(/\.\d{3}/, "");
-  const date = dateTime.slice(0, 8);
-  const end = now.toISOString().slice(0, 10);
-  const start = new Date(now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
-  const body = JSON.stringify({ TimePeriod: { Start: start, End: end }, Granularity: "MONTHLY", Metrics: ["UnblendedCost"] });
-  const payloadHash = createHash("sha256").update(body).digest("hex");
-  const canonicalHeaders = `content-type:application/x-amz-json-1.1\nhost:${host}\nx-amz-date:${dateTime}\nx-amz-target:AmazonCEService.GetCostAndUsage\n`;
-  const signedHeaders = "content-type;host;x-amz-date;x-amz-target";
-  const canonicalRequest = ["POST", "/", "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
-  const credentialScope = `${date}/${region}/ce/aws4_request`;
-  const stringToSign = ["AWS4-HMAC-SHA256", dateTime, credentialScope, createHash("sha256").update(canonicalRequest).digest("hex")].join("\n");
-  const kDate = createHmac("sha256", `AWS4${keys.secretAccessKey}`).update(date).digest();
-  const kRegion = createHmac("sha256", kDate).update(region).digest();
-  const kService = createHmac("sha256", kRegion).update("ce").digest();
-  const kSigning = createHmac("sha256", kService).update("aws4_request").digest();
-  const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
-  const authHeader = `AWS4-HMAC-SHA256 Credential=${keys.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  const res = await fetch(`https://${host}/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-amz-json-1.1", Host: host, "X-Amz-Date": dateTime, "X-Amz-Target": "AmazonCEService.GetCostAndUsage", Authorization: authHeader },
-    body,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.message ?? `Erreur ${res.status}`);
   }
 }
 
@@ -146,17 +112,6 @@ async function testOvh(keys: Keys) {
   }
 }
 
-// ── Amazon ─────────────────────────────────────────────────────────────────
-async function testAmazon(keys: Keys) {
-  const res = await fetch("https://api.amazon.com/auth/o2/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", client_id: keys.clientId, client_secret: keys.clientSecret, refresh_token: keys.refreshToken }).toString(),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.access_token) throw new Error(data.error_description ?? "Token LWA invalide");
-}
-
 // ── Scaleway ───────────────────────────────────────────────────────────────
 async function testScaleway(keys: Keys) {
   const res = await fetch(
@@ -180,18 +135,6 @@ async function testHostinger(keys: Keys) {
   }
 }
 
-// ── Orange ─────────────────────────────────────────────────────────────────
-async function testOrange(keys: Keys) {
-  const creds = Buffer.from(`${keys.clientId}:${keys.clientSecret}`).toString("base64");
-  const res = await fetch("https://api.orange.com/oauth/v3/token", {
-    method: "POST",
-    headers: { Authorization: `Basic ${creds}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "client_credentials" }).toString(),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.access_token) throw new Error(data.error_description ?? "Token Orange invalide");
-}
-
 // ── Webflow ────────────────────────────────────────────────────────────────
 async function testWebflow(keys: Keys) {
   const res = await fetch("https://api.webflow.com/v2/token/introspect", {
@@ -201,17 +144,6 @@ async function testWebflow(keys: Keys) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.message ?? `Erreur ${res.status}`);
   }
-}
-
-// ── Setapp/Paddle ──────────────────────────────────────────────────────────
-async function testSetapp(keys: Keys) {
-  const res = await fetch("https://vendors.paddle.com/api/2.0/user", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ vendor_id: keys.vendorId, vendor_auth_code: keys.vendorAuthCode }),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) throw new Error(data.error?.message ?? "Identifiants Paddle invalides");
 }
 
 // ── GitHub ─────────────────────────────────────────────────────────────────
@@ -235,17 +167,13 @@ async function testQonto(keys: Keys) {
 const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
   microsoft: testMicrosoft,
   apple: testApple,
-  aws: testAws,
   googlecloud: testGoogleCloud,
   openai: testOpenAI,
   vercel: testVercel,
   ovh: testOvh,
-  amazon: testAmazon,
   scaleway: testScaleway,
   hostinger: testHostinger,
-  orange: testOrange,
   webflow: testWebflow,
-  setapp: testSetapp,
   github: testGitHub,
   qonto: testQonto,
 };
