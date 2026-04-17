@@ -240,6 +240,41 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Virements sortants", available: false },
     ],
   },
+  feedly: {
+    url: "https://feedly.com/v3/auth/dev",
+    urlLabel: "Obtenir un Developer Token Feedly",
+    steps: [
+      { text: "Connecte-toi sur feedly.com." },
+      { text: "Va sur feedly.com/v3/auth/dev pour générer un Developer Access Token (compte Feedly Pro requis)." },
+      { text: "Copie le token affiché (commence par A...).", code: "A..." },
+      { text: "Note : tu peux aussi utiliser un token OAuth standard si tu as une app enregistrée." },
+    ],
+    capabilities: [
+      { label: "Lister les flux auxquels tu es abonné", available: true },
+      { label: "Lister les dossiers/catégories", available: true },
+      { label: "Lire les articles d'un flux ou dossier", available: true },
+      { label: "Créer des dossiers", available: true },
+      { label: "Marquer des articles comme lus", available: true },
+      { label: "Ajouter/supprimer des abonnements", available: false },
+    ],
+  },
+  elevenlabs: {
+    url: "https://elevenlabs.io/app/settings/api-keys",
+    urlLabel: "Ouvrir ElevenLabs API Keys",
+    steps: [
+      { text: "Connecte-toi sur elevenlabs.io." },
+      { text: "Va dans Settings → API Keys." },
+      { text: "Crée une nouvelle clé API et copie la valeur (commence par sk_...).", code: "sk_..." },
+    ],
+    capabilities: [
+      { label: "Lister les voix disponibles", available: true },
+      { label: "Synthèse vocale (text-to-speech)", available: true },
+      { label: "Lister les modèles", available: true },
+      { label: "Gérer les projets podcast", available: true },
+      { label: "Voir l'usage et les crédits restants", available: true },
+      { label: "Cloner une voix", available: false },
+    ],
+  },
 };
 
 function HelpModal({

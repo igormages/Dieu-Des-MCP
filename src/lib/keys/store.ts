@@ -188,6 +188,26 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  feedly: {
+    label: "Feedly",
+    fields: [
+      {
+        key: "accessToken",
+        label: "Access Token (Developer Token)",
+        placeholder: "A...",
+      },
+    ],
+  },
+  elevenlabs: {
+    label: "ElevenLabs",
+    fields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        placeholder: "sk_...",
+      },
+    ],
+  },
 };
 
 let redis: Redis | null = null;
@@ -266,6 +286,14 @@ function getFromEnv(service: string): ServiceConfig | null {
     case "webflow": {
       const apiToken = process.env.WEBFLOW_API_TOKEN;
       return apiToken ? { apiToken } : null;
+    }
+    case "feedly": {
+      const accessToken = process.env.FEEDLY_ACCESS_TOKEN;
+      return accessToken ? { accessToken } : null;
+    }
+    case "elevenlabs": {
+      const apiKey = process.env.ELEVENLABS_API_KEY;
+      return apiKey ? { apiKey } : null;
     }
     default:
       return null;

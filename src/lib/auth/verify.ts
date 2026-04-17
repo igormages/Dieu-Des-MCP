@@ -32,6 +32,8 @@ export async function verifyBearerToken(
       "read:scaleway", "write:scaleway",
       "read:hostinger", "write:hostinger",
       "read:webflow", "write:webflow",
+      "read:feedly", "write:feedly",
+      "read:elevenlabs", "write:elevenlabs",
     ],
     clientId: session.userId,
     extra: {
