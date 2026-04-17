@@ -107,13 +107,14 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
     ],
   },
   amazon: {
-    url: "https://sellercentral.amazon.fr/apps/manage",
-    urlLabel: "Ouvrir Seller Central Apps",
+    url: "https://developer-docs.amazon.com/sp-api/docs/registering-as-a-developer",
+    urlLabel: "Documentation SP-API Amazon Business",
     steps: [
-      { text: "Connecte-toi sur Seller Central → Apps & Services → Develop Apps." },
-      { text: "Crée une application LWA (Login with Amazon) pour obtenir le Client ID et Client Secret." },
-      { text: "Autorise l'application sur ton compte vendeur pour obtenir le Refresh Token via le flux OAuth SP-API." },
-      { text: "Le Marketplace ID France est A13V1IB3VIYZZH.", code: "A13V1IB3VIYZZH" },
+      { text: "Connecte-toi sur business.amazon.fr avec ton compte acheteur pro." },
+      { text: "Va sur developer.amazon.com → Sign In → Register as developer (utilise le même compte Amazon Business)." },
+      { text: "Crée une application LWA (Login with Amazon) : note le Client ID et le Client Secret." },
+      { text: "Pour le Refresh Token, lance le flux OAuth SP-API avec le scope sellingpartnerapi::ecommerce_fulfillment, et récupère le token de réponse." },
+      { text: "Le Marketplace ID France est A13V1IB3VIYZZH, Europe (toutes places) : A1F83G8C2ARO7P.", code: "A13V1IB3VIYZZH" },
     ],
   },
   scaleway: {
