@@ -1,0 +1,33 @@
+{
+  "name": "mcp-aggregator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.2.2",
+    "@modelcontextprotocol/sdk": "1.26.0",
+    "@octokit/rest": "^22.0.0",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@upstash/redis": "^1.37.0",
+    "mcp-handler": "^1.1.0",
+    "next": "^16.2.4",
+    "postcss": "^8.5.10",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.2.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "eslint": "^9.25.1",
+    "eslint-config-next": "^16.2.4",
+    "typescript": "^5.8.3"
+  }
+}
