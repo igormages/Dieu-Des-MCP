@@ -33,6 +33,21 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  anthropic: {
+    label: "Anthropic (Claude)",
+    fields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        placeholder: "sk-ant-api03-...",
+      },
+      {
+        key: "adminKey",
+        label: "Admin API Key (optionnel, pour usage & workspaces)",
+        placeholder: "sk-ant-admin-...",
+      },
+    ],
+  },
   microsoft: {
     label: "Microsoft 365",
     fields: [
@@ -196,6 +211,11 @@ function getFromEnv(service: string): ServiceConfig | null {
       const slug = process.env.QONTO_ORGANIZATION_SLUG;
       const key = process.env.QONTO_SECRET_KEY;
       return slug && key ? { organizationSlug: slug, secretKey: key } : null;
+    }
+    case "anthropic": {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const adminKey = process.env.ANTHROPIC_ADMIN_KEY;
+      return apiKey ? { apiKey, ...(adminKey ? { adminKey } : {}) } : null;
     }
     case "microsoft": {
       const tenantId = process.env.MICROSOFT_TENANT_ID;
