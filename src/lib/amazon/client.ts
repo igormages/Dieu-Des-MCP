@@ -128,35 +128,37 @@ export async function listOrders(params: {
   return amazonFetch<AmazonOrdersResponse>("/orders/v0/orders", queryParams);
 }
 
-export interface AmazonInvoice {
-  InvoiceId: string;
-  InvoiceType: string;
-  TransactionId: string;
-  InvoiceDate: string;
-  InvoiceCurrencyCode: string;
-  InvoiceTotal: { CurrencyCode: string; Amount: string };
-  InvoiceUrl?: string;
+// Business Invoices API — for buyer accounts (VAT invoices on purchases)
+export interface AmazonBusinessInvoice {
+  invoiceId: string;
+  invoiceType: string;
+  invoiceDate: string;
+  invoiceStatus: string;
+  marketplaceId: string;
+  totalAmount: { amount: string; currencyCode: string };
+  transactionIdentifiers: Array<{ transactionType: string; transactionId: string }>;
+  invoiceDownloadURL?: string;
 }
 
 export async function listInvoices(params: {
   marketplaceId?: string;
-  dateStart?: string;
-  dateEnd?: string;
+  dateRangeStart?: string;
+  dateRangeEnd?: string;
   nextToken?: string;
   pageSize?: number;
-}): Promise<{ invoices: AmazonInvoice[]; nextToken?: string }> {
+}): Promise<{ invoices: AmazonBusinessInvoice[]; nextToken?: string; totalCount?: number }> {
   const config = await getConfig();
   const queryParams: Record<string, string> = {
     marketplaceId: params.marketplaceId ?? config.marketplace!,
   };
 
-  if (params.dateStart) queryParams["dateStart"] = params.dateStart;
-  if (params.dateEnd) queryParams["dateEnd"] = params.dateEnd;
+  if (params.dateRangeStart) queryParams["dateRangeStart"] = params.dateRangeStart;
+  if (params.dateRangeEnd) queryParams["dateRangeEnd"] = params.dateRangeEnd;
   if (params.nextToken) queryParams["nextToken"] = params.nextToken;
   if (params.pageSize) queryParams["pageSize"] = String(params.pageSize);
 
-  return amazonFetch<{ invoices: AmazonInvoice[]; nextToken?: string }>(
-    "/vendor/invoices/v1/invoices",
+  return amazonFetch<{ invoices: AmazonBusinessInvoice[]; nextToken?: string; totalCount?: number }>(
+    "/business-invoices/2024-06-19/invoices",
     queryParams
   );
 }

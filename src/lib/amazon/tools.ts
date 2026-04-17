@@ -62,20 +62,20 @@ export function registerAmazonTools(server: McpServer) {
 
   server.tool(
     "amazon_list_invoices",
-    "Liste les factures Amazon Business/Vendor Central via SP-API",
+    "Liste les factures TVA Amazon Business (compte acheteur pro) via Business Invoices API",
     {
       marketplace_id: z
         .string()
         .optional()
-        .describe("ID du marketplace Amazon (défaut: A1F83G8C2ARO7P pour UK)"),
-      date_start: z
+        .describe("ID du marketplace (défaut: A13V1IB3VIYZZH pour FR)"),
+      date_range_start: z
         .string()
         .optional()
-        .describe("Date de début (ISO 8601)"),
-      date_end: z
+        .describe("Date de début ISO 8601 (ex: 2025-01-01T00:00:00Z)"),
+      date_range_end: z
         .string()
         .optional()
-        .describe("Date de fin (ISO 8601)"),
+        .describe("Date de fin ISO 8601"),
       page_size: z
         .number()
         .int()
@@ -91,8 +91,8 @@ export function registerAmazonTools(server: McpServer) {
     async (params) => {
       const result = await listInvoices({
         marketplaceId: params.marketplace_id,
-        dateStart: params.date_start,
-        dateEnd: params.date_end,
+        dateRangeStart: params.date_range_start,
+        dateRangeEnd: params.date_range_end,
         pageSize: params.page_size,
         nextToken: params.next_token,
       });
