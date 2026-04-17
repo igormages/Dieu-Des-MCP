@@ -19,7 +19,23 @@ export async function verifyBearerToken(
 
   return {
     token: bearerToken,
-    scopes: ["read:qonto", "write:qonto", "read:github", "write:github"],
+    scopes: [
+      "read:qonto", "write:qonto",
+      "read:github", "write:github",
+      "read:microsoft", "write:microsoft",
+      "read:apple", "write:apple",
+      "read:aws", "write:aws",
+      "read:googlecloud", "write:googlecloud",
+      "read:openai", "write:openai",
+      "read:vercel", "write:vercel",
+      "read:ovh", "write:ovh",
+      "read:amazon", "write:amazon",
+      "read:scaleway", "write:scaleway",
+      "read:hostinger", "write:hostinger",
+      "read:orange", "write:orange",
+      "read:webflow", "write:webflow",
+      "read:setapp", "write:setapp",
+    ],
     clientId: session.userId,
     extra: {
       userId: session.userId,
