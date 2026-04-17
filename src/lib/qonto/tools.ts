@@ -7,6 +7,7 @@ import {
   listTransactionsWithoutAttachments,
   listAttachmentsForTransaction,
   uploadAttachmentToTransaction,
+  uploadAttachmentFromUrl,
   listBeneficiaries,
 } from "./client";
 
@@ -211,27 +212,72 @@ export function registerQontoTools(server: McpServer) {
 
   server.tool(
     "qonto_upload_attachment",
-    "Envoie une pièce jointe (facture, reçu) sur une transaction Qonto. Accepte JPEG, PNG ou PDF encodé en base64.",
+    "Envoie une pièce jointe (facture PDF, reçu JPEG/PNG) sur une transaction Qonto. " +
+    "Utilise file_url pour les gros fichiers (PDF Stripe, Vercel, etc.) — le serveur télécharge directement sans passer par Claude. " +
+    "Utilise file_base64 uniquement pour les petits fichiers déjà disponibles en mémoire.",
     {
       transaction_id: z
         .string()
-        .describe("ID de la transaction (UUID)"),
+        .describe("ID de la transaction (UUID, obtenu via qonto_list_transactions)"),
+      file_url: z
+        .string()
+        .optional()
+        .describe(
+          "URL du fichier à télécharger côté serveur et uploader directement vers Qonto. " +
+          "Recommandé pour tous les PDF (Stripe, Vercel, Webflow…) — contourne les limites MCP sur la taille des payloads. " +
+          "Supporte les fichiers jusqu'à 100 Mo. Le nom et le type sont détectés automatiquement."
+        ),
       file_base64: z
         .string()
-        .describe("Contenu du fichier encodé en base64"),
+        .optional()
+        .describe("Contenu du fichier encodé en base64. Préférer file_url pour les fichiers > 1 Mo."),
       file_name: z
         .string()
-        .describe("Nom du fichier avec extension (ex: facture-2025-03.pdf)"),
+        .optional()
+        .describe("Nom du fichier avec extension (ex: facture-2025-03.pdf). Détecté automatiquement depuis file_url si absent."),
       content_type: z
         .enum(["image/jpeg", "image/png", "application/pdf"])
-        .describe("Type MIME du fichier"),
+        .optional()
+        .describe("Type MIME. Détecté automatiquement depuis file_url si absent. Requis avec file_base64."),
     },
     async (params) => {
+      if (!params.file_url && !params.file_base64) {
+        throw new Error("Fournir soit file_url (recommandé) soit file_base64.");
+      }
+
+      if (params.file_url) {
+        const result = await uploadAttachmentFromUrl(
+          params.transaction_id,
+          params.file_url,
+          params.file_name,
+          params.content_type
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  success: result.success,
+                  fileName: result.fileName,
+                  fileSize: `${(result.fileSize / 1024).toFixed(1)} Ko`,
+                  message: `Pièce jointe "${result.fileName}" (${(result.fileSize / 1024).toFixed(1)} Ko) téléchargée depuis l'URL et envoyée sur la transaction ${params.transaction_id}.`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      const fileName = params.file_name ?? "attachment.pdf";
+      const contentType = params.content_type ?? "application/pdf";
       const result = await uploadAttachmentToTransaction(
         params.transaction_id,
-        params.file_base64,
-        params.file_name,
-        params.content_type
+        params.file_base64!,
+        fileName,
+        contentType
       );
       return {
         content: [
@@ -240,7 +286,7 @@ export function registerQontoTools(server: McpServer) {
             text: JSON.stringify(
               {
                 success: result.success,
-                message: `Pièce jointe "${params.file_name}" envoyée sur la transaction ${params.transaction_id}. Le traitement est asynchrone, la pièce jointe sera visible sous quelques secondes.`,
+                message: `Pièce jointe "${fileName}" envoyée sur la transaction ${params.transaction_id}.`,
               },
               null,
               2
