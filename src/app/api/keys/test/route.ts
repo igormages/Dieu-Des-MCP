@@ -177,6 +177,31 @@ async function testQonto(keys: Keys) {
   if (!res.ok) throw new Error(`Identifiants Qonto invalides (${res.status})`);
 }
 
+// ── Feedly ─────────────────────────────────────────────────────────────────
+async function testFeedly(keys: Keys) {
+  const res = await fetch("https://cloud.feedly.com/v3/profile", {
+    headers: { Authorization: `Bearer ${keys.accessToken}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { errorMessage?: string }).errorMessage ?? `Token Feedly invalide (${res.status})`);
+  }
+}
+
+// ── ElevenLabs ─────────────────────────────────────────────────────────────
+async function testElevenLabs(keys: Keys) {
+  const res = await fetch("https://api.elevenlabs.io/v1/user", {
+    headers: { "xi-api-key": keys.apiKey },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = (err as { detail?: { message?: string } | string }).detail;
+    throw new Error(
+      typeof msg === "string" ? msg : (msg as { message?: string })?.message ?? `Clé ElevenLabs invalide (${res.status})`
+    );
+  }
+}
+
 // ── Registry ───────────────────────────────────────────────────────────────
 const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
   anthropic: testAnthropic,
@@ -191,6 +216,8 @@ const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
   webflow: testWebflow,
   github: testGitHub,
   qonto: testQonto,
+  feedly: testFeedly,
+  elevenlabs: testElevenLabs,
 };
 
 export async function POST(request: Request) {

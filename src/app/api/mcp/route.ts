@@ -11,6 +11,8 @@ import { registerOvhTools } from "@/lib/ovh/tools";
 import { registerScalewayTools } from "@/lib/scaleway/tools";
 import { registerHostingerTools } from "@/lib/hostinger/tools";
 import { registerWebflowTools } from "@/lib/webflow/tools";
+import { registerFeedlyTools } from "@/lib/feedly/tools";
+import { registerElevenLabsTools } from "@/lib/elevenlabs/tools";
 import { verifyBearerToken } from "@/lib/auth/verify";
 
 const handler = createMcpHandler(
@@ -27,6 +29,8 @@ const handler = createMcpHandler(
     registerScalewayTools(server);
     registerHostingerTools(server);
     registerWebflowTools(server);
+    registerFeedlyTools(server);
+    registerElevenLabsTools(server);
   },
   {
     capabilities: {
