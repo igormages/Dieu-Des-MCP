@@ -214,11 +214,7 @@ export async function uploadAttachmentToTransaction(
   fileName: string,
   contentType: string
 ): Promise<{ success: boolean }> {
-  const binaryString = atob(fileBase64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  const bytes = Buffer.from(fileBase64, "base64");
   const blob = new Blob([bytes], { type: contentType });
 
   const formData = new FormData();
@@ -229,9 +225,7 @@ export async function uploadAttachmentToTransaction(
     `${QONTO_BASE_URL}/transactions/${transactionId}/attachments`,
     {
       method: "POST",
-      headers: {
-        Authorization: authHeader,
-      },
+      headers: { Authorization: authHeader },
       body: formData,
     }
   );
@@ -242,6 +236,59 @@ export async function uploadAttachmentToTransaction(
   }
 
   return { success: true };
+}
+
+function extractFileName(fileUrl: string, contentDisposition: string | null): string {
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+    if (match?.[1]) return match[1].replace(/['"]/g, "").trim();
+  }
+  try {
+    const pathname = new URL(fileUrl).pathname;
+    const segment = pathname.split("/").filter(Boolean).pop();
+    if (segment) return decodeURIComponent(segment);
+  } catch {
+    // ignore
+  }
+  return "attachment.pdf";
+}
+
+export async function uploadAttachmentFromUrl(
+  transactionId: string,
+  fileUrl: string,
+  fileName?: string,
+  contentType?: string
+): Promise<{ success: boolean; fileName: string; fileSize: number }> {
+  const fileResponse = await fetch(fileUrl, { redirect: "follow" });
+  if (!fileResponse.ok) {
+    throw new Error(`Impossible de télécharger le fichier depuis l'URL (${fileResponse.status})`);
+  }
+
+  const detectedType = (contentType ?? fileResponse.headers.get("content-type") ?? "application/pdf").split(";")[0].trim();
+  const detectedName = fileName ?? extractFileName(fileUrl, fileResponse.headers.get("content-disposition"));
+
+  const buffer = await fileResponse.arrayBuffer();
+  const blob = new Blob([buffer], { type: detectedType });
+
+  const formData = new FormData();
+  formData.append("file", blob, detectedName);
+
+  const authHeader = await getAuthHeader();
+  const response = await fetch(
+    `${QONTO_BASE_URL}/transactions/${transactionId}/attachments`,
+    {
+      method: "POST",
+      headers: { Authorization: authHeader },
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Qonto upload error ${response.status}: ${text}`);
+  }
+
+  return { success: true, fileName: detectedName, fileSize: buffer.byteLength };
 }
 
 export async function listBeneficiaries(params?: {
