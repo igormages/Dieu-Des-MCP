@@ -10,7 +10,7 @@ export default async function SettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="sticky top-0 z-10 border-b border-gray-200 bg-white/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-900 text-sm font-bold text-white">
               M
@@ -31,7 +31,7 @@ export default async function SettingsPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-8">
           <h2 className="text-xl font-bold text-gray-900">Services</h2>
           <p className="mt-1 text-sm text-gray-500">
