@@ -4,6 +4,20 @@ import { createSign, createHash } from "crypto";
 
 type Keys = Record<string, string>;
 
+// ── Anthropic ─────────────────────────────────────────────────────────────
+async function testAnthropic(keys: Keys) {
+  const res = await fetch("https://api.anthropic.com/v1/models", {
+    headers: {
+      "x-api-key": keys.apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message ?? `Clé API Anthropic invalide (${res.status})`);
+  }
+}
+
 // ── Microsoft ──────────────────────────────────────────────────────────────
 async function testMicrosoft(keys: Keys) {
   const res = await fetch(
@@ -165,6 +179,7 @@ async function testQonto(keys: Keys) {
 
 // ── Registry ───────────────────────────────────────────────────────────────
 const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
+  anthropic: testAnthropic,
   microsoft: testMicrosoft,
   apple: testApple,
   googlecloud: testGoogleCloud,

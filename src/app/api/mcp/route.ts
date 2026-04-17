@@ -1,6 +1,7 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { registerQontoTools } from "@/lib/qonto/tools";
 import { registerGitHubTools } from "@/lib/github/tools";
+import { registerAnthropicTools } from "@/lib/anthropic/tools";
 import { registerMicrosoftTools } from "@/lib/microsoft/tools";
 import { registerAppleTools } from "@/lib/apple/tools";
 import { registerGoogleCloudTools } from "@/lib/googlecloud/tools";
@@ -16,6 +17,7 @@ const handler = createMcpHandler(
   (server) => {
     registerQontoTools(server);
     registerGitHubTools(server);
+    registerAnthropicTools(server);
     registerMicrosoftTools(server);
     registerAppleTools(server);
     registerGoogleCloudTools(server);
