@@ -21,20 +21,251 @@ interface ApiResponse {
   kvReady: boolean;
 }
 
+interface HelpStep {
+  text: string;
+  code?: string;
+}
+
+interface HelpInfo {
+  url: string;
+  urlLabel: string;
+  steps: HelpStep[];
+}
+
+const SERVICE_HELP: Record<string, HelpInfo> = {
+  microsoft: {
+    url: "https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview",
+    urlLabel: "Ouvrir Microsoft Entra ID",
+    steps: [
+      { text: "Dans le portail Azure, ouvre Microsoft Entra ID (ex-Azure Active Directory)." },
+      { text: "Sur la page d'accueil, copie l'ID de locataire (Tenant ID)." },
+      { text: "Va dans App registrations → New registration, donne un nom (ex: MCP Billing)." },
+      { text: "Copie l'Application (client) ID affiché après création." },
+      { text: "Va dans Certificates & secrets → New client secret, copie la valeur immédiatement." },
+      { text: "Va dans API permissions → Add permission → Microsoft Graph → Application → cherche InvoiceRead.All, accorde le consentement admin." },
+    ],
+  },
+  apple: {
+    url: "https://appstoreconnect.apple.com/access/integrations/api",
+    urlLabel: "Ouvrir App Store Connect API",
+    steps: [
+      { text: "Connecte-toi sur App Store Connect avec un compte Admin." },
+      { text: "Va dans Users and Access → Integrations → App Store Connect API." },
+      { text: "Clique sur Generate API Key, note l'Issuer ID affiché en haut de la page." },
+      { text: "Copie le Key ID de la clé créée." },
+      { text: "Télécharge le fichier .p8 (une seule fois possible) et colle son contenu entier dans Private Key." },
+    ],
+  },
+  aws: {
+    url: "https://console.aws.amazon.com/iam/home#/security_credentials",
+    urlLabel: "Ouvrir IAM Security Credentials",
+    steps: [
+      { text: "Dans la console AWS, clique sur ton nom en haut à droite → Security credentials." },
+      { text: "Descend jusqu'à Access keys → Create access key." },
+      { text: "Copie l'Access key ID et le Secret access key (affiché une seule fois)." },
+      { text: "Assure-toi que l'utilisateur IAM a la politique ce:GetCostAndUsage attachée (ou AdministratorAccess pour les tests)." },
+      { text: "La région est optionnelle (défaut: eu-west-1).", code: "eu-west-1" },
+    ],
+  },
+  googlecloud: {
+    url: "https://console.cloud.google.com/iam-admin/serviceaccounts",
+    urlLabel: "Ouvrir Service Accounts GCP",
+    steps: [
+      { text: "Dans la console GCP, va dans IAM & Admin → Service Accounts." },
+      { text: "Crée un service account ou sélectionne un existant." },
+      { text: "Attribue le rôle Billing Account Viewer au niveau du compte de facturation." },
+      { text: "Dans l'onglet Keys du service account, crée une clé JSON." },
+      { text: "Ouvre le JSON, copie client_email dans Service Account Email et private_key dans Private Key.", code: "client_email / private_key" },
+    ],
+  },
+  openai: {
+    url: "https://platform.openai.com/api-keys",
+    urlLabel: "Ouvrir OpenAI API Keys",
+    steps: [
+      { text: "Connecte-toi sur platform.openai.com." },
+      { text: "Va dans API Keys → Create new secret key." },
+      { text: "Copie la clé (commence par sk-...). Pour les coûts organisation, la clé doit avoir le scope admin." },
+    ],
+  },
+  vercel: {
+    url: "https://vercel.com/account/tokens",
+    urlLabel: "Ouvrir Vercel Tokens",
+    steps: [
+      { text: "Va sur vercel.com → Settings → Tokens." },
+      { text: "Crée un token avec le scope Full Account, copie la valeur." },
+      { text: "Le Team ID est optionnel : va dans ton équipe → Settings, copie le Team ID (commence par team_...).", code: "team_xxxxxxxxx" },
+    ],
+  },
+  ovh: {
+    url: "https://eu.api.ovh.com/createApp/",
+    urlLabel: "Créer une application OVH",
+    steps: [
+      { text: "Va sur eu.api.ovh.com/createApp/ et connecte-toi avec ton compte OVH." },
+      { text: "Remplis le nom et la description de l'application, valide. Copie l'Application Key et l'Application Secret." },
+      { text: "Pour le Consumer Key, va sur eu.api.ovh.com/createToken/ et génère un token avec les droits GET /me/bill et GET /me/bill/*." },
+      { text: "L'endpoint est ovh-eu pour l'Europe (défaut).", code: "ovh-eu" },
+    ],
+  },
+  amazon: {
+    url: "https://sellercentral.amazon.fr/apps/manage",
+    urlLabel: "Ouvrir Seller Central Apps",
+    steps: [
+      { text: "Connecte-toi sur Seller Central → Apps & Services → Develop Apps." },
+      { text: "Crée une application LWA (Login with Amazon) pour obtenir le Client ID et Client Secret." },
+      { text: "Autorise l'application sur ton compte vendeur pour obtenir le Refresh Token via le flux OAuth SP-API." },
+      { text: "Le Marketplace ID France est A13V1IB3VIYZZH.", code: "A13V1IB3VIYZZH" },
+    ],
+  },
+  scaleway: {
+    url: "https://console.scaleway.com/iam/api-keys",
+    urlLabel: "Ouvrir Scaleway IAM API Keys",
+    steps: [
+      { text: "Dans la console Scaleway, va dans IAM → API Keys → Generate an API key." },
+      { text: "Copie la Secret Key (affichée une seule fois)." },
+      { text: "L'Organization ID se trouve dans IAM → Overview ou dans les paramètres de l'organisation.", code: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+    ],
+  },
+  hostinger: {
+    url: "https://hpanel.hostinger.com/api",
+    urlLabel: "Ouvrir Hostinger API",
+    steps: [
+      { text: "Connecte-toi sur hpanel.hostinger.com." },
+      { text: "Va dans Account → API ou dans les paramètres du compte." },
+      { text: "Génère un Personal Access Token et copie la valeur." },
+    ],
+  },
+  orange: {
+    url: "https://developer.orange.com/apis",
+    urlLabel: "Ouvrir Orange Developer Portal",
+    steps: [
+      { text: "Va sur developer.orange.com et crée un compte développeur." },
+      { text: "Crée une nouvelle application dans My Apps." },
+      { text: "Souscris à l'API Billing/Invoice correspondant à ton contrat Orange Business." },
+      { text: "Copie le Client ID et le Client Secret de l'application créée." },
+    ],
+  },
+  webflow: {
+    url: "https://webflow.com/dashboard/account/integrations",
+    urlLabel: "Ouvrir Webflow Integrations",
+    steps: [
+      { text: "Dans le Dashboard Webflow, va dans Account Settings → Integrations → API Access." },
+      { text: "Génère un API Token avec les scopes nécessaires (sites:read, authorized_user:read)." },
+      { text: "Copie le token généré." },
+    ],
+  },
+  setapp: {
+    url: "https://vendors.paddle.com/",
+    urlLabel: "Ouvrir Paddle Vendor Dashboard",
+    steps: [
+      { text: "Connecte-toi sur vendors.paddle.com avec ton compte Paddle/Setapp." },
+      { text: "Va dans Developer Tools → Authentication." },
+      { text: "Copie le Vendor ID (numérique) affiché en haut de page." },
+      { text: "Génère ou copie le Vendor Auth Code depuis cette même page." },
+    ],
+  },
+  github: {
+    url: "https://github.com/settings/tokens",
+    urlLabel: "Ouvrir GitHub Tokens",
+    steps: [
+      { text: "Va dans GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)." },
+      { text: "Clique sur Generate new token, sélectionne les scopes repo et read:org selon tes besoins." },
+      { text: "Copie le token (commence par ghp_...).", code: "ghp_..." },
+    ],
+  },
+  qonto: {
+    url: "https://app.qonto.com/settings/api",
+    urlLabel: "Ouvrir Qonto API Settings",
+    steps: [
+      { text: "Connecte-toi sur app.qonto.com → Settings → API." },
+      { text: "Copie l'Organization Slug (identifiant de ton organisation, ex: ma-societe-1234)." },
+      { text: "Génère une clé secrète et copie la valeur.", code: "ma-societe-1234" },
+    ],
+  },
+};
+
+function HelpModal({ serviceKey, label, onClose }: { serviceKey: string; label: string; onClose: () => void }) {
+  const help = SERVICE_HELP[serviceKey];
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <h3 className="font-semibold text-gray-900">
+            Comment configurer {label}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {help ? (
+            <>
+              <ol className="space-y-3">
+                {help.steps.map((step, i) => (
+                  <li key={i} className="flex gap-3 text-sm text-gray-700">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <span>
+                      {step.text}
+                      {step.code && (
+                        <code className="ml-1 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700">
+                          {step.code}
+                        </code>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+
+              <a
+                href={help.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+              >
+                {help.urlLabel}
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </>
+          ) : (
+            <p className="text-sm text-gray-500">Aucune aide disponible pour ce service.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsForm() {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const [formValues, setFormValues] = useState<
-    Record<string, Record<string, string>>
-  >({});
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [formValues, setFormValues] = useState<Record<string, Record<string, string>>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // Keys that were just saved and are pending move to the bottom after 10s
+  const [helpOpen, setHelpOpen] = useState<string | null>(null);
   const [recentlySaved, setRecentlySaved] = useState<Set<string>>(new Set());
   const moveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -47,11 +278,8 @@ export function SettingsForm() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Clean up timers on unmount
   useEffect(() => {
     const timers = moveTimers.current;
     return () => { Object.values(timers).forEach(clearTimeout); };
@@ -67,10 +295,7 @@ export function SettingsForm() {
   }
 
   function updateField(service: string, key: string, value: string) {
-    setFormValues((prev) => ({
-      ...prev,
-      [service]: { ...prev[service], [key]: value },
-    }));
+    setFormValues((prev) => ({ ...prev, [service]: { ...prev[service], [key]: value } }));
   }
 
   async function handleSave(service: string) {
@@ -80,10 +305,7 @@ export function SettingsForm() {
     const keys: Record<string, string> = {};
     for (const f of fields) {
       const val = formValues[service]?.[f.key]?.trim();
-      if (!val) {
-        showMessage("error", `Le champ "${f.label}" est requis`);
-        return;
-      }
+      if (!val) { showMessage("error", `Le champ "${f.label}" est requis`); return; }
       keys[f.key] = val;
     }
 
@@ -99,15 +321,10 @@ export function SettingsForm() {
       setFormValues((prev) => ({ ...prev, [service]: {} }));
       await fetchData();
 
-      // Mark as recently saved; after 10s collapse and move to bottom
       setRecentlySaved((prev) => new Set(prev).add(service));
       clearTimeout(moveTimers.current[service]);
       moveTimers.current[service] = setTimeout(() => {
-        setRecentlySaved((prev) => {
-          const next = new Set(prev);
-          next.delete(service);
-          return next;
-        });
+        setRecentlySaved((prev) => { const next = new Set(prev); next.delete(service); return next; });
         setExpanded((prev) => ({ ...prev, [service]: false }));
       }, 10000);
     } else {
@@ -119,14 +336,9 @@ export function SettingsForm() {
 
   async function handleDelete(service: string) {
     setDeleting(service);
-    const res = await fetch(`/api/keys?service=${service}`, {
-      method: "DELETE",
-    });
+    const res = await fetch(`/api/keys?service=${service}`, { method: "DELETE" });
     if (res.ok) {
-      showMessage(
-        "success",
-        `Clés ${data?.services[service].label} supprimées`
-      );
+      showMessage("success", `Clés ${data?.services[service].label} supprimées`);
       await fetchData();
     }
     setDeleting(null);
@@ -148,145 +360,144 @@ export function SettingsForm() {
     );
   }
 
-  // Unconfigured (or just saved but pending move) on top; configured on bottom
   const entries = Object.entries(data.services);
-  const unconfigured = entries.filter(
-    ([key, svc]) => !svc.configured || recentlySaved.has(key)
-  );
-  const configured = entries.filter(
-    ([key, svc]) => svc.configured && !recentlySaved.has(key)
-  );
+  const unconfigured = entries.filter(([key, svc]) => !svc.configured || recentlySaved.has(key));
+  const configured = entries.filter(([key, svc]) => svc.configured && !recentlySaved.has(key));
   const sorted = [...unconfigured, ...configured];
 
   return (
-    <div className="space-y-6">
-      {message && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            message.type === "success"
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-red-200 bg-red-50 text-red-700"
-          }`}
-        >
-          {message.text}
-        </div>
+    <>
+      {helpOpen && data.services[helpOpen] && (
+        <HelpModal
+          serviceKey={helpOpen}
+          label={data.services[helpOpen].label}
+          onClose={() => setHelpOpen(null)}
+        />
       )}
 
-      {!data.kvReady && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <strong>Mode env vars</strong> — Configurez{" "}
-          <code className="rounded bg-amber-100 px-1 font-mono text-xs">
-            KV_REST_API_URL
-          </code>{" "}
-          et{" "}
-          <code className="rounded bg-amber-100 px-1 font-mono text-xs">
-            KV_REST_API_TOKEN
-          </code>{" "}
-          (Upstash Redis via Vercel Marketplace) pour activer la gestion des
-          clés depuis cette interface.
-        </div>
-      )}
+      <div className="space-y-6">
+        {message && (
+          <div
+            className={`rounded-lg border px-4 py-3 text-sm ${
+              message.type === "success"
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            {message.text}
+          </div>
+        )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {sorted.map(([serviceKey, service]) => {
-          const isOpen = expanded[serviceKey] ?? false;
-          const isConfigured = service.configured;
+        {!data.kvReady && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>Mode env vars</strong> — Configurez{" "}
+            <code className="rounded bg-amber-100 px-1 font-mono text-xs">KV_REST_API_URL</code>{" "}
+            et{" "}
+            <code className="rounded bg-amber-100 px-1 font-mono text-xs">KV_REST_API_TOKEN</code>{" "}
+            (Upstash Redis via Vercel Marketplace) pour activer la gestion des clés depuis cette interface.
+          </div>
+        )}
 
-          return (
-            <div
-              key={serviceKey}
-              className="rounded-xl border border-gray-200 bg-white shadow-sm"
-            >
-              {/* Header — always visible, click to toggle */}
-              <button
-                type="button"
-                onClick={() => toggleExpanded(serviceKey)}
-                className="flex w-full items-center justify-between px-5 py-4 text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 font-mono text-xs font-bold text-gray-600">
-                    {serviceKey.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold leading-tight">
-                      {service.label}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {isConfigured
-                        ? `Configuré (${service.source === "kv" ? "interface" : "env vars"})`
-                        : "Non configuré"}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2.5 shrink-0">
-                  <span
-                    className={`inline-flex h-2 w-2 rounded-full ${
-                      isConfigured ? "bg-green-500" : "bg-gray-300"
-                    }`}
-                  />
-                  <svg
-                    className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
-                      isOpen ? "rotate-180" : ""
-                    }`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.map(([serviceKey, service]) => {
+            const isOpen = expanded[serviceKey] ?? false;
+            const isConfigured = service.configured;
+
+            return (
+              <div key={serviceKey} className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                {/* Header */}
+                <div className="flex items-center gap-1 px-4 py-3">
+                  {/* Toggle (tout sauf le bouton info) */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(serviceKey)}
+                    className="flex flex-1 items-center gap-3 text-left min-w-0"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </button>
-
-              {/* Collapsible body */}
-              {isOpen && (
-                <div className="border-t border-gray-100 px-5 py-4 space-y-3">
-                  {service.fields.map((field) => (
-                    <div key={field.key}>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        {field.label}
-                      </label>
-                      <input
-                        type="password"
-                        placeholder={
-                          field.maskedValue
-                            ? `Actuel : ${field.maskedValue}`
-                            : field.placeholder
-                        }
-                        value={formValues[serviceKey]?.[field.key] || ""}
-                        onChange={(e) =>
-                          updateField(serviceKey, field.key, e.target.value)
-                        }
-                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-                        disabled={!data.kvReady}
-                      />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 font-mono text-xs font-bold text-gray-600">
+                      {serviceKey.slice(0, 2).toUpperCase()}
                     </div>
-                  ))}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold leading-tight">{service.label}</p>
+                      <p className="text-xs text-gray-500">
+                        {isConfigured
+                          ? `Configuré (${service.source === "kv" ? "interface" : "env vars"})`
+                          : "Non configuré"}
+                      </p>
+                    </div>
+                  </button>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      onClick={() => handleSave(serviceKey)}
-                      disabled={saving === serviceKey || !data.kvReady}
-                      className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  {/* Info button */}
+                  <button
+                    type="button"
+                    onClick={() => setHelpOpen(serviceKey)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                    title="Comment obtenir les clés"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
+                    </svg>
+                  </button>
+
+                  {/* Status dot + chevron */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(serviceKey)}
+                    className="flex shrink-0 items-center gap-1.5 pl-1"
+                  >
+                    <span className={`inline-flex h-2 w-2 rounded-full ${isConfigured ? "bg-green-500" : "bg-gray-300"}`} />
+                    <svg
+                      className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
                     >
-                      {saving === serviceKey ? "Enregistrement..." : "Enregistrer"}
-                    </button>
-                    {isConfigured && service.source === "kv" && (
-                      <button
-                        onClick={() => handleDelete(serviceKey)}
-                        disabled={deleting === serviceKey}
-                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {deleting === serviceKey ? "Suppression..." : "Supprimer"}
-                      </button>
-                    )}
-                  </div>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Collapsible body */}
+                {isOpen && (
+                  <div className="border-t border-gray-100 px-5 py-4 space-y-3">
+                    {service.fields.map((field) => (
+                      <div key={field.key}>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          {field.label}
+                        </label>
+                        <input
+                          type="password"
+                          placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
+                          value={formValues[serviceKey]?.[field.key] || ""}
+                          onChange={(e) => updateField(serviceKey, field.key, e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+                          disabled={!data.kvReady}
+                        />
+                      </div>
+                    ))}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => handleSave(serviceKey)}
+                        disabled={saving === serviceKey || !data.kvReady}
+                        className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {saving === serviceKey ? "Enregistrement..." : "Enregistrer"}
+                      </button>
+                      {isConfigured && service.source === "kv" && (
+                        <button
+                          onClick={() => handleDelete(serviceKey)}
+                          disabled={deleting === serviceKey}
+                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {deleting === serviceKey ? "Suppression..." : "Supprimer"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
