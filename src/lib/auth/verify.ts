@@ -22,6 +22,7 @@ export async function verifyBearerToken(
     scopes: [
       "read:qonto", "write:qonto",
       "read:github", "write:github",
+      "read:anthropic", "write:anthropic",
       "read:microsoft", "write:microsoft",
       "read:apple", "write:apple",
       "read:aws", "write:aws",
