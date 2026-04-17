@@ -56,17 +56,6 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { text: "Télécharge le fichier .p8 (une seule fois possible) et colle son contenu entier dans Private Key." },
     ],
   },
-  aws: {
-    url: "https://console.aws.amazon.com/iam/home#/security_credentials",
-    urlLabel: "Ouvrir IAM Security Credentials",
-    steps: [
-      { text: "Dans la console AWS, clique sur ton nom en haut à droite → Security credentials." },
-      { text: "Descend jusqu'à Access keys → Create access key." },
-      { text: "Copie l'Access key ID et le Secret access key (affiché une seule fois)." },
-      { text: "Assure-toi que l'utilisateur IAM a la politique ce:GetCostAndUsage attachée (ou AdministratorAccess pour les tests)." },
-      { text: "La région est optionnelle (défaut: eu-west-1).", code: "eu-west-1" },
-    ],
-  },
   googlecloud: {
     url: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     urlLabel: "Ouvrir Service Accounts GCP",
@@ -106,17 +95,6 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { text: "L'endpoint est ovh-eu pour l'Europe (défaut).", code: "ovh-eu" },
     ],
   },
-  amazon: {
-    url: "https://developer-docs.amazon.com/sp-api/docs/registering-as-a-developer",
-    urlLabel: "Documentation SP-API Amazon Business",
-    steps: [
-      { text: "Connecte-toi sur business.amazon.fr avec ton compte acheteur pro." },
-      { text: "Va sur developer.amazon.com → Sign In → Register as developer (utilise le même compte Amazon Business)." },
-      { text: "Crée une application LWA (Login with Amazon) : note le Client ID et le Client Secret." },
-      { text: "Pour le Refresh Token, lance le flux OAuth SP-API avec le scope sellingpartnerapi::ecommerce_fulfillment, et récupère le token de réponse." },
-      { text: "Le Marketplace ID France est A13V1IB3VIYZZH, Europe (toutes places) : A1F83G8C2ARO7P.", code: "A13V1IB3VIYZZH" },
-    ],
-  },
   scaleway: {
     url: "https://console.scaleway.com/iam/api-keys",
     urlLabel: "Ouvrir Scaleway IAM API Keys",
@@ -135,16 +113,6 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { text: "Génère un Personal Access Token et copie la valeur." },
     ],
   },
-  orange: {
-    url: "https://developer.orange.com/apis",
-    urlLabel: "Ouvrir Orange Developer Portal",
-    steps: [
-      { text: "Va sur developer.orange.com et crée un compte développeur." },
-      { text: "Crée une nouvelle application dans My Apps." },
-      { text: "Souscris à l'API Billing/Invoice correspondant à ton contrat Orange Business." },
-      { text: "Copie le Client ID et le Client Secret de l'application créée." },
-    ],
-  },
   webflow: {
     url: "https://webflow.com/dashboard/account/integrations",
     urlLabel: "Ouvrir Webflow Integrations",
@@ -152,16 +120,6 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { text: "Dans le Dashboard Webflow, va dans Account Settings → Integrations → API Access." },
       { text: "Génère un API Token avec les scopes nécessaires (sites:read, authorized_user:read)." },
       { text: "Copie le token généré." },
-    ],
-  },
-  setapp: {
-    url: "https://vendors.paddle.com/",
-    urlLabel: "Ouvrir Paddle Vendor Dashboard",
-    steps: [
-      { text: "Connecte-toi sur vendors.paddle.com avec ton compte Paddle/Setapp." },
-      { text: "Va dans Developer Tools → Authentication." },
-      { text: "Copie le Vendor ID (numérique) affiché en haut de page." },
-      { text: "Génère ou copie le Vendor Auth Code depuis cette même page." },
     ],
   },
   github: {

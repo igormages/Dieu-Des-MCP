@@ -73,26 +73,6 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
-  aws: {
-    label: "AWS EMEA",
-    fields: [
-      {
-        key: "accessKeyId",
-        label: "Access Key ID",
-        placeholder: "AKIAIOSFODNN7EXAMPLE",
-      },
-      {
-        key: "secretAccessKey",
-        label: "Secret Access Key",
-        placeholder: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-      },
-      {
-        key: "region",
-        label: "Region (optionnel)",
-        placeholder: "eu-west-1",
-      },
-    ],
-  },
   googlecloud: {
     label: "Google Cloud",
     fields: [
@@ -158,31 +138,6 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
-  amazon: {
-    label: "Amazon Business",
-    fields: [
-      {
-        key: "clientId",
-        label: "LWA Client ID",
-        placeholder: "amzn1.application-oa2-client...",
-      },
-      {
-        key: "clientSecret",
-        label: "LWA Client Secret",
-        placeholder: "votre-client-secret",
-      },
-      {
-        key: "refreshToken",
-        label: "Refresh Token",
-        placeholder: "Atzr|...",
-      },
-      {
-        key: "marketplace",
-        label: "Marketplace ID (optionnel)",
-        placeholder: "A13V1IB3VIYZZH (FR)",
-      },
-    ],
-  },
   scaleway: {
     label: "Scaleway",
     fields: [
@@ -208,21 +163,6 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
-  orange: {
-    label: "Orange Business",
-    fields: [
-      {
-        key: "clientId",
-        label: "Client ID",
-        placeholder: "votre-client-id",
-      },
-      {
-        key: "clientSecret",
-        label: "Client Secret",
-        placeholder: "votre-client-secret",
-      },
-    ],
-  },
   webflow: {
     label: "Webflow",
     fields: [
@@ -230,21 +170,6 @@ export const SERVICE_DEFINITIONS: Record<
         key: "apiToken",
         label: "API Token",
         placeholder: "votre-api-token",
-      },
-    ],
-  },
-  setapp: {
-    label: "Setapp (Paddle)",
-    fields: [
-      {
-        key: "vendorId",
-        label: "Vendor ID",
-        placeholder: "12345",
-      },
-      {
-        key: "vendorAuthCode",
-        label: "Vendor Auth Code",
-        placeholder: "votre-auth-code",
       },
     ],
   },
@@ -286,14 +211,6 @@ function getFromEnv(service: string): ServiceConfig | null {
       const privateKey = process.env.APPLE_PRIVATE_KEY;
       return keyId && issuerId && privateKey ? { keyId, issuerId, privateKey } : null;
     }
-    case "aws": {
-      const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-      const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-      const region = process.env.AWS_REGION ?? "us-east-1";
-      return accessKeyId && secretAccessKey
-        ? { accessKeyId, secretAccessKey, region }
-        : null;
-    }
     case "googlecloud": {
       const clientEmail = process.env.GOOGLECLOUD_CLIENT_EMAIL;
       const privateKey = process.env.GOOGLECLOUD_PRIVATE_KEY;
@@ -317,15 +234,6 @@ function getFromEnv(service: string): ServiceConfig | null {
         ? { appKey, appSecret, consumerKey, endpoint }
         : null;
     }
-    case "amazon": {
-      const clientId = process.env.AMAZON_CLIENT_ID;
-      const clientSecret = process.env.AMAZON_CLIENT_SECRET;
-      const refreshToken = process.env.AMAZON_REFRESH_TOKEN;
-      const marketplace = process.env.AMAZON_MARKETPLACE_ID;
-      return clientId && clientSecret && refreshToken
-        ? { clientId, clientSecret, refreshToken, ...(marketplace ? { marketplace } : {}) }
-        : null;
-    }
     case "scaleway": {
       const secretKey = process.env.SCALEWAY_SECRET_KEY;
       const organizationId = process.env.SCALEWAY_ORGANIZATION_ID;
@@ -335,19 +243,9 @@ function getFromEnv(service: string): ServiceConfig | null {
       const apiToken = process.env.HOSTINGER_API_TOKEN;
       return apiToken ? { apiToken } : null;
     }
-    case "orange": {
-      const clientId = process.env.ORANGE_CLIENT_ID;
-      const clientSecret = process.env.ORANGE_CLIENT_SECRET;
-      return clientId && clientSecret ? { clientId, clientSecret } : null;
-    }
     case "webflow": {
       const apiToken = process.env.WEBFLOW_API_TOKEN;
       return apiToken ? { apiToken } : null;
-    }
-    case "setapp": {
-      const vendorId = process.env.SETAPP_VENDOR_ID;
-      const vendorAuthCode = process.env.SETAPP_VENDOR_AUTH_CODE;
-      return vendorId && vendorAuthCode ? { vendorId, vendorAuthCode } : null;
     }
     default:
       return null;
