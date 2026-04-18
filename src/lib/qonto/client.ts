@@ -304,7 +304,9 @@ export async function deleteAttachment(attachmentId: string): Promise<{ success:
   }
 
   return { success: true };
-}params?: {
+}
+
+export async function listBeneficiaries(params?: {
   status?: string;
   updatedAtFrom?: string;
   updatedAtTo?: string;
