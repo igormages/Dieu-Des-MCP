@@ -8,6 +8,7 @@ import {
   listAttachmentsForTransaction,
   uploadAttachmentToTransaction,
   uploadAttachmentFromUrl,
+  deleteAttachment,
   listBeneficiaries,
 } from "./client";
 
@@ -288,6 +289,31 @@ export function registerQontoTools(server: McpServer) {
                 success: result.success,
                 message: `Pièce jointe "${fileName}" envoyée sur la transaction ${params.transaction_id}.`,
               },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "qonto_delete_attachment",
+    "Supprime une pièce jointe (facture, reçu) uploadée par erreur sur une transaction Qonto",
+    {
+      attachment_id: z
+        .string()
+        .describe("UUID de la pièce jointe (obtenu via qonto_list_attachments)"),
+    },
+    async (params) => {
+      await deleteAttachment(params.attachment_id);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              { success: true, message: `Pièce jointe ${params.attachment_id} supprimée.` },
               null,
               2
             ),

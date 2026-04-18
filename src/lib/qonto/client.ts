@@ -291,7 +291,20 @@ export async function uploadAttachmentFromUrl(
   return { success: true, fileName: detectedName, fileSize: buffer.byteLength };
 }
 
-export async function listBeneficiaries(params?: {
+export async function deleteAttachment(attachmentId: string): Promise<{ success: boolean }> {
+  const authHeader = await getAuthHeader();
+  const response = await fetch(`${QONTO_BASE_URL}/attachments/${attachmentId}`, {
+    method: "DELETE",
+    headers: { Authorization: authHeader },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Qonto delete error ${response.status}: ${text}`);
+  }
+
+  return { success: true };
+}params?: {
   status?: string;
   updatedAtFrom?: string;
   updatedAtTo?: string;
