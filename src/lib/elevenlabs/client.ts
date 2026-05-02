@@ -84,13 +84,13 @@ export function listProjects() {
   return req<{ projects: ElevenLabsProject[] }>("/projects");
 }
 
-export async function textToSpeech(
+export async function textToSpeechMp3(
   voiceId: string,
   text: string,
   modelId = "eleven_multilingual_v2",
   stability = 0.5,
   similarityBoost = 0.75
-): Promise<string> {
+): Promise<Uint8Array> {
   const apiKey = await getApiKey();
   const res = await fetch(`${BASE}/text-to-speech/${voiceId}`, {
     method: "POST",
@@ -113,7 +113,7 @@ export async function textToSpeech(
     );
   }
   const buffer = await res.arrayBuffer();
-  return Buffer.from(buffer).toString("base64");
+  return new Uint8Array(buffer);
 }
 
 export function createProject(
