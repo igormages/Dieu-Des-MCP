@@ -228,26 +228,56 @@ async function fetchWithJar(
   throw new Error(`Trop de redirections en chaîne (>${maxRedirects})`);
 }
 
+interface LoginTrace {
+  step: string;
+  startUrl: string;
+  finalUrl: string;
+  status: number;
+  cookieNamesSet?: string[];
+  bodyPreview?: string;
+}
+
 /**
  * Exécute le flow OAuth2 complet et retourne un état de session prêt à l'emploi.
  * Idempotent et concurrent-safe via `inflightLogin`.
+ *
+ * Quand `traceCollector` est fourni, chaque étape HTTP est consignée pour debug.
  */
-async function performLogin(): Promise<SessionState> {
+async function performLogin(traceCollector?: LoginTrace[]): Promise<SessionState> {
   const { username, password } = await getCredentials();
   const jar = new CookieJar();
+  const cookieSnapshot = () => {
+    const all = jar.toJSON();
+    return Object.entries(all).flatMap(([host, cookies]) =>
+      Object.keys(cookies).map((n) => `${host}:${n}`)
+    );
+  };
 
   // 1. Démarrer le flow en demandant la page de login Cookidoo (qui redirige vers CIAM).
   const initial = await fetchWithJar(jar, `${ORIGIN}/profile/${LANGUAGE}/login`, {
     method: "GET",
     headers: {
       accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+      "upgrade-insecure-requests": "1",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "none",
+      "sec-fetch-user": "?1",
     },
   });
   const loginHtml = await initial.response.text();
+  traceCollector?.push({
+    step: "GET /profile/<lang>/login (redirige vers CIAM)",
+    startUrl: `${ORIGIN}/profile/${LANGUAGE}/login`,
+    finalUrl: initial.finalUrl,
+    status: initial.response.status,
+    cookieNamesSet: cookieSnapshot(),
+    bodyPreview: loginHtml.slice(0, 200),
+  });
+
   if (!initial.finalUrl.startsWith(CIAM_HOST)) {
     // Cas particulier : on est déjà authentifié (cookies encore valides), on a atterri sur cookidoo.fr.
-    // C'est anormal pour un performLogin appelé après un clearSession, mais on tente quand même.
     if (initial.finalUrl.startsWith(ORIGIN)) {
       const xsrfMatch = loginHtml.match(/name="_csrf"\s+value="([^"]+)"/);
       const state = await buildSession(jar, xsrfMatch?.[1] ?? null);
@@ -270,7 +300,9 @@ async function performLogin(): Promise<SessionState> {
     ? new URL(actionMatch[1], initial.finalUrl).toString()
     : `${CIAM_HOST}/login-srv/login`;
 
-  // 3. POST des identifiants.
+  // 3. POST des identifiants. CIAM rend le formulaire dans un contexte sandboxé,
+  // donc le navigateur envoie `Origin: null` et pas de Referer. Reproduire ces headers
+  // est crucial : sinon CIAM rejette le POST par protection CSRF et redirige vers le login.
   const body = new URLSearchParams({ requestId, username, password }).toString();
   const submit = await fetchWithJar(jar, action, {
     method: "POST",
@@ -278,26 +310,42 @@ async function performLogin(): Promise<SessionState> {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      origin: CIAM_HOST,
-      referer: initial.finalUrl,
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+      origin: "null",
+      "upgrade-insecure-requests": "1",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "cross-site",
+      "sec-fetch-user": "?1",
+      "cache-control": "max-age=0",
     },
   });
-  await submit.response.text().catch(() => undefined);
+  const submitText = await submit.response.text();
+  traceCollector?.push({
+    step: "POST CIAM /login-srv/login (credentials)",
+    startUrl: action,
+    finalUrl: submit.finalUrl,
+    status: submit.response.status,
+    cookieNamesSet: cookieSnapshot(),
+    bodyPreview: submitText.slice(0, 200),
+  });
 
   if (submit.response.status >= 400) {
     throw new Error(
-      `Cookidoo : login refusé (statut ${submit.response.status}). Vérifie email/mot de passe sur /settings.`
+      `Cookidoo : login refusé (HTTP ${submit.response.status}). Vérifie email/mot de passe sur /settings. URL finale : ${submit.finalUrl}`
     );
   }
-  // Si on est encore sur CIAM après le POST, c'est que les identifiants ont été refusés.
+  // Si on est encore sur CIAM après le POST, c'est que les identifiants ont été refusés
+  // OU que CIAM a invalidé le requestId (rejeu, expiration, headers manquants).
   if (submit.finalUrl.toLowerCase().startsWith(CIAM_HOST.toLowerCase())) {
+    const looksLikeError =
+      /invalid|incorrect|wrong|verrouill|locked|expired|expir(é|ee)/i.test(submitText);
     throw new Error(
-      "Cookidoo : identifiants invalides ou compte verrouillé (toujours sur CIAM après POST). Mets à jour le mot de passe sur /settings."
+      `Cookidoo : POST credentials rejeté par CIAM (URL finale : ${submit.finalUrl}). ${looksLikeError ? "Le formulaire mentionne une erreur d'identifiants ou de compte verrouillé. " : ""}Vérifie le mot de passe sur /settings ou utilise cookidoo_debug_login pour voir la trace complète.`
     );
   }
 
-  // 4. Toujours visiter une page rendant un formulaire avec _csrf pour avoir un XSRF token frais.
+  // 4. Toujours visiter /organize/fr/my-recipes pour récupérer un XSRF token frais.
   const csrfPage = await fetchWithJar(jar, `${ORIGIN}/organize/${MARKET}/my-recipes`, {
     method: "GET",
     headers: {
@@ -305,12 +353,20 @@ async function performLogin(): Promise<SessionState> {
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     },
   });
+  const csrfHtml = await csrfPage.response.text();
+  traceCollector?.push({
+    step: "GET /organize/fr/my-recipes (récupération XSRF)",
+    startUrl: `${ORIGIN}/organize/${MARKET}/my-recipes`,
+    finalUrl: csrfPage.finalUrl,
+    status: csrfPage.response.status,
+    cookieNamesSet: cookieSnapshot(),
+    bodyPreview: csrfHtml.slice(0, 200),
+  });
   if (isLoginRedirect(csrfPage.finalUrl)) {
     throw new Error(
-      "Cookidoo : login en apparence réussi mais session immédiatement invalidée (compte sans abonnement actif ?)."
+      `Cookidoo : login en apparence réussi mais session immédiatement invalidée (URL finale : ${csrfPage.finalUrl}). Cause probable : compte sans abonnement actif, ou cookies non préservés.`
     );
   }
-  const csrfHtml = await csrfPage.response.text();
   const xsrfFromHtml = csrfHtml.match(/name="_csrf"\s+value="([^"]+)"/)?.[1] ?? null;
   const xsrfFromHeader = csrfPage.response.headers.get("x-xsrf-token");
 
@@ -554,4 +610,66 @@ export async function cookidooLogout(): Promise<void> {
 export async function cookidooForceRelogin(): Promise<{ ok: true; loggedInAt: number }> {
   const state = await getOrCreateSession(true);
   return { ok: true, loggedInAt: state.loggedInAt };
+}
+
+/**
+ * Exécute un login complet et renvoie une trace détaillée de chaque étape HTTP
+ * (URL initiale → URL finale → status → cookies posés). Utile pour diagnostiquer
+ * les "redirect-to-login" silencieux. N'écrase pas la session courante en cas
+ * d'échec, mais la remplace en cas de succès.
+ */
+export async function cookidooDebugLogin(): Promise<{
+  ok: boolean;
+  error?: string;
+  trace: LoginTrace[];
+  configuredEmail?: string;
+}> {
+  const trace: LoginTrace[] = [];
+  const keys = await getServiceKeys("cookidoo");
+  const configuredEmail = keys?.username;
+  if (!keys?.username || !keys?.password) {
+    return {
+      ok: false,
+      error: "Identifiants non configurés sur /settings.",
+      trace,
+      configuredEmail,
+    };
+  }
+  await clearSession();
+  if (!(await performLoginNoThrow(trace))) {
+    return {
+      ok: false,
+      error:
+        trace[trace.length - 1]?.finalUrl?.startsWith(CIAM_HOST)
+          ? "POST CIAM rejeté → identifiants probablement invalides ou compte verrouillé."
+          : "Échec du login (voir trace).",
+      trace,
+      configuredEmail: maskEmail(configuredEmail),
+    };
+  }
+  return { ok: true, trace, configuredEmail: maskEmail(configuredEmail) };
+}
+
+async function performLoginNoThrow(trace: LoginTrace[]): Promise<boolean> {
+  try {
+    await performLogin(trace);
+    return true;
+  } catch (err) {
+    trace.push({
+      step: "ERROR",
+      startUrl: "",
+      finalUrl: err instanceof Error ? err.message : String(err),
+      status: 0,
+    });
+    return false;
+  }
+}
+
+function maskEmail(email?: string): string | undefined {
+  if (!email) return undefined;
+  const [user, domain] = email.split("@");
+  if (!domain) return email.slice(0, 2) + "***";
+  const masked =
+    user.length <= 2 ? user[0] + "*" : user.slice(0, 2) + "***" + user.slice(-1);
+  return `${masked}@${domain}`;
 }
