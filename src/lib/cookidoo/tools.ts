@@ -1,6 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { COOKIDOO, cookidooGetHtml, cookidooRequest } from "./client";
+import {
+  COOKIDOO,
+  cookidooForceRelogin,
+  cookidooGetHtml,
+  cookidooLogout,
+  cookidooRequest,
+} from "./client";
 
 const ALGOLIA_APP_ID = "3TA8NT85XJ";
 const ALGOLIA_HOST = `${ALGOLIA_APP_ID.toLowerCase()}-dsn.algolia.net`;
@@ -1207,7 +1213,7 @@ export function registerCookidooTools(server: McpServer): void {
     }
   );
 
-  /* ---------- Compte ---------- */
+  /* ---------- Compte / session ---------- */
 
   server.tool(
     "cookidoo_get_user_info",
@@ -1219,6 +1225,46 @@ export function registerCookidooTools(server: McpServer): void {
       });
       return {
         content: [{ type: "text" as const, text: JSON.stringify(res, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
+    "cookidoo_relogin",
+    "Force un re-login Cookidoo (utile si tu suspectes que la session est expirée). Le re-login se fait normalement automatiquement à chaque requête, ce tool est surtout pour debug.",
+    {},
+    async () => {
+      const res = await cookidooForceRelogin();
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                ok: true,
+                loggedInAt: new Date(res.loggedInAt).toISOString(),
+                message:
+                  "Session Cookidoo réinitialisée avec succès. Les prochains appels utiliseront les nouveaux cookies.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "cookidoo_logout",
+    "Supprime la session Cookidoo en cache. Le prochain appel se reconnectera avec les identifiants stockés.",
+    {},
+    async () => {
+      await cookidooLogout();
+      return {
+        content: [
+          { type: "text" as const, text: "Session Cookidoo effacée du cache." },
+        ],
       };
     }
   );

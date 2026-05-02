@@ -118,6 +118,16 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  openrouter: {
+    label: "OpenRouter",
+    fields: [
+      {
+        key: "apiKey",
+        label: "API Key",
+        placeholder: "sk-or-v1-...",
+      },
+    ],
+  },
   vercel: {
     label: "Vercel",
     fields: [
@@ -283,6 +293,10 @@ function getFromEnv(service: string): ServiceConfig | null {
     }
     case "openai": {
       const apiKey = process.env.OPENAI_API_KEY;
+      return apiKey ? { apiKey } : null;
+    }
+    case "openrouter": {
+      const apiKey = process.env.OPENROUTER_API_KEY;
       return apiKey ? { apiKey } : null;
     }
     case "vercel": {

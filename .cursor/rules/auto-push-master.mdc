@@ -1,0 +1,29 @@
+---
+description: Auto-commit et push sur master après chaque modification de code
+alwaysApply: true
+---
+
+# Auto-push sur master
+
+À la fin de **toute** modification de code (création, édition, suppression de fichiers), tu DOIS :
+
+1. `git add -A` pour stager tous les changements
+2. `git commit -m "<message clair en français>"` avec un message qui résume le "pourquoi" (1-2 phrases)
+3. `git push origin master`
+
+## Règles importantes
+
+- **Toujours** faire ces 3 étapes, même pour de petites modifications, sans demander la permission
+- Le commit/push se fait **après** la dernière édition de la session (pas après chaque fichier)
+- Ne **jamais** utiliser `--force`, `--no-verify` ou `--amend`
+- Si `git push` échoue (rebase nécessaire, conflit) : faire `git pull --rebase origin master` puis re-push
+- Ne **jamais** committer si le résultat de `npx tsc --noEmit` ou du linter signale une erreur introduite par tes modifications — fixe-la d'abord
+- Ne **jamais** committer de fichier contenant des secrets (`.env`, `.env.local`, `credentials.json`, clés privées)
+- Format du message : verbe d'action en français, ex :
+  - `ajoute outil MCP openrouter pour génération d'images`
+  - `corrige expiration session Cookidoo avec re-login auto`
+  - `met à jour la doc des outils Cookidoo`
+
+## Exception
+
+Si l'utilisateur demande explicitement de **ne pas** committer/push (ex. "fais juste la modif sans push"), respecte sa demande pour ce tour.
