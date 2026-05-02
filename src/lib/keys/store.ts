@@ -218,6 +218,21 @@ export const SERVICE_DEFINITIONS: Record<
     fields: [],
     noKeysRequired: true,
   },
+  cookidoo: {
+    label: "Cookidoo (Thermomix)",
+    fields: [
+      {
+        key: "username",
+        label: "Email du compte Cookidoo",
+        placeholder: "votre.email@example.com",
+      },
+      {
+        key: "password",
+        label: "Mot de passe",
+        placeholder: "votre mot de passe",
+      },
+    ],
+  },
 };
 
 let redis: Redis | null = null;
@@ -304,6 +319,11 @@ function getFromEnv(service: string): ServiceConfig | null {
     case "elevenlabs": {
       const apiKey = process.env.ELEVENLABS_API_KEY;
       return apiKey ? { apiKey } : null;
+    }
+    case "cookidoo": {
+      const username = process.env.COOKIDOO_USERNAME;
+      const password = process.env.COOKIDOO_PASSWORD;
+      return username && password ? { username, password } : null;
     }
     default:
       return null;
