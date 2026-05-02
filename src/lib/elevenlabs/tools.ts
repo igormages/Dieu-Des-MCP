@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getSubscription, listVoices, listModels, listProjects, textToSpeech, createProject } from "./client";
+import { getSubscription, listVoices, listModels, listProjects, textToSpeechMp3, createProject } from "./client";
+import { publishTtsMp3Url } from "./publish-audio";
 
 export function registerElevenLabsTools(server: McpServer) {
   server.tool(
@@ -45,21 +46,62 @@ export function registerElevenLabsTools(server: McpServer) {
 
   server.tool(
     "elevenlabs_text_to_speech",
-    "Génère un fichier audio MP3 à partir d'un texte avec une voix ElevenLabs. Retourne l'audio encodé en base64.",
+    "Génère un MP3 (ElevenLabs). Par défaut : upload sur Vercel Blob et retour d’une URL audio (léger pour le MCP). Option base64 uniquement pour debug (réponses très volumineuses).",
     {
       text: z.string().describe("Texte à synthétiser en audio"),
       voiceId: z.string().describe("ID de la voix ElevenLabs à utiliser (obtenu via elevenlabs_list_voices)"),
       modelId: z.string().optional().describe("ID du modèle (défaut: eleven_multilingual_v2)"),
       stability: z.number().min(0).max(1).optional().describe("Stabilité de la voix 0-1 (défaut: 0.5)"),
       similarityBoost: z.number().min(0).max(1).optional().describe("Ressemblance à la voix 0-1 (défaut: 0.75)"),
+      delivery: z
+        .enum(["url", "base64"])
+        .optional()
+        .describe(
+          "url : lien MP3 public via Vercel Blob (défaut, requiert BLOB_READ_WRITE_TOKEN). base64 : audio encodé (à éviter pour les longs textes)."
+        ),
     },
-    async ({ text, voiceId, modelId, stability, similarityBoost }) => {
-      const base64Audio = await textToSpeech(voiceId, text, modelId, stability, similarityBoost);
+    async ({ text, voiceId, modelId, stability, similarityBoost, delivery }) => {
+      const audio = await textToSpeechMp3(voiceId, text, modelId, stability, similarityBoost);
+      const mode = delivery ?? "url";
+
+      if (mode === "base64") {
+        const audioBase64 = Buffer.from(audio).toString("base64");
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  format: "base64",
+                  contentType: "audio/mpeg",
+                  sizeBytes: audio.byteLength,
+                  textLength: text.length,
+                  audioBase64,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      const audioUrl = await publishTtsMp3Url(audio);
       return {
         content: [
           {
             type: "text" as const,
-            text: `Audio MP3 généré (${text.length} caractères).\nBase64:\n${base64Audio}`,
+            text: JSON.stringify(
+              {
+                format: "url",
+                audioUrl,
+                contentType: "audio/mpeg",
+                sizeBytes: audio.byteLength,
+                textLength: text.length,
+              },
+              null,
+              2
+            ),
           },
         ],
       };

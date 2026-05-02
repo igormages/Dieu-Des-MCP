@@ -266,10 +266,13 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { text: "Connecte-toi sur elevenlabs.io." },
       { text: "Va dans Settings → API Keys." },
       { text: "Crée une nouvelle clé API et copie la valeur (commence par sk_...).", code: "sk_..." },
+      {
+        text: "Pour l’outil MCP « text-to-speech » : ajoute un Blob Store sur Vercel et la variable BLOB_READ_WRITE_TOKEN sur le déploiement afin de recevoir un lien MP3 (évite les grosses réponses base64).",
+      },
     ],
     capabilities: [
       { label: "Lister les voix disponibles", available: true },
-      { label: "Synthèse vocale (text-to-speech)", available: true },
+      { label: "Synthèse vocale (lien MP3 via Vercel Blob par défaut)", available: true },
       { label: "Lister les modèles", available: true },
       { label: "Gérer les projets podcast", available: true },
       { label: "Voir l'usage et les crédits restants", available: true },
