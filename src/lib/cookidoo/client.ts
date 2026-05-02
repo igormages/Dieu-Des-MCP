@@ -3,7 +3,8 @@ import { getServiceKeys, getKvClient } from "@/lib/keys/store";
 const MARKET = "fr";
 const LANGUAGE = "fr-FR";
 const ORIGIN = "https://cookidoo.fr";
-const CIAM_HOST = "https://ciam.prod.cookidoo.vorwerk-digital.com";
+const CIAM_HOST = "https://eu.login.vorwerk.com";
+const CIAM_HOST_LEGACY = "https://ciam.prod.cookidoo.vorwerk-digital.com";
 const SESSION_KEY = "cookidoo:session:default";
 /**
  * TTL conservateur pour le cache Redis. Cookidoo invalide souvent ses cookies
@@ -145,8 +146,11 @@ function isLoginRedirect(finalUrl: string): boolean {
   const lower = finalUrl.toLowerCase();
   return (
     lower.startsWith(CIAM_HOST.toLowerCase()) ||
+    lower.startsWith(CIAM_HOST_LEGACY.toLowerCase()) ||
+    lower.includes("eu.login.vorwerk.com") ||
     /\/profile\/[a-z-]+\/login(\?|$|#)/.test(lower) ||
     lower.includes("login-srv/login") ||
+    lower.includes("/ciam/login") ||
     lower.includes("/oauth2/authorize")
   );
 }
@@ -276,7 +280,10 @@ async function performLogin(traceCollector?: LoginTrace[]): Promise<SessionState
     bodyPreview: loginHtml.slice(0, 200),
   });
 
-  if (!initial.finalUrl.startsWith(CIAM_HOST)) {
+  const onCiam =
+    initial.finalUrl.startsWith(CIAM_HOST) ||
+    initial.finalUrl.startsWith(CIAM_HOST_LEGACY);
+  if (!onCiam) {
     // Cas particulier : on est déjà authentifié (cookies encore valides), on a atterri sur cookidoo.fr.
     if (initial.finalUrl.startsWith(ORIGIN)) {
       const xsrfMatch = loginHtml.match(/name="_csrf"\s+value="([^"]+)"/);
@@ -337,7 +344,10 @@ async function performLogin(traceCollector?: LoginTrace[]): Promise<SessionState
   }
   // Si on est encore sur CIAM après le POST, c'est que les identifiants ont été refusés
   // OU que CIAM a invalidé le requestId (rejeu, expiration, headers manquants).
-  if (submit.finalUrl.toLowerCase().startsWith(CIAM_HOST.toLowerCase())) {
+  if (
+    submit.finalUrl.toLowerCase().startsWith(CIAM_HOST.toLowerCase()) ||
+    submit.finalUrl.toLowerCase().startsWith(CIAM_HOST_LEGACY.toLowerCase())
+  ) {
     const looksLikeError =
       /invalid|incorrect|wrong|verrouill|locked|expired|expir(é|ee)/i.test(submitText);
     throw new Error(
