@@ -13,6 +13,7 @@ interface ServiceInfo {
   label: string;
   configured: boolean;
   source: string;
+  noKeysRequired?: boolean;
   fields: FieldDef[];
 }
 
@@ -275,6 +276,18 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Cloner une voix", available: false },
     ],
   },
+  clubigen: {
+    url: "https://www.clubigen.fr",
+    urlLabel: "Site Club iGen",
+    steps: [
+      { text: "Le flux RSS Club iGen est exposé via l’outil MCP « clubigen_list_rss_articles » sans clé API." },
+      { text: "Respecte la limite du fournisseur : au plus 10 requêtes HTTP sur le flux toutes les 5 minutes (déjà appliquée côté serveur)." },
+      { text: "Tu peux surcharger l’URL du flux avec la variable d’environnement CLUBIGEN_RSS_URL sur le déploiement si besoin." },
+    ],
+    capabilities: [
+      { label: "Lister les articles du flux RSS", available: true },
+    ],
+  },
 };
 
 function HelpModal({
@@ -282,6 +295,7 @@ function HelpModal({
   label,
   fields,
   kvReady,
+  noKeysRequired,
   onClose,
   onSave,
 }: {
@@ -289,6 +303,7 @@ function HelpModal({
   label: string;
   fields: FieldDef[];
   kvReady: boolean;
+  noKeysRequired?: boolean;
   onClose: () => void;
   onSave: (values: Record<string, string>) => Promise<void>;
 }) {
@@ -338,7 +353,9 @@ function HelpModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
-          <h3 className="font-semibold text-gray-900">Configurer {label}</h3>
+          <h3 className="font-semibold text-gray-900">
+            {noKeysRequired ? label : `Configurer ${label}`}
+          </h3>
           <button
             onClick={onClose}
             className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
@@ -353,7 +370,9 @@ function HelpModal({
           {/* Steps */}
           {help && (
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Comment obtenir les clés</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                {noKeysRequired ? "Informations" : "Comment obtenir les clés"}
+              </p>
               <ol className="space-y-2.5">
                 {help.steps.map((step, i) => (
                   <li key={i} className="flex gap-3 text-sm text-gray-700">
@@ -415,45 +434,57 @@ function HelpModal({
             </div>
           )}
 
-          {/* Divider */}
-          <div className="border-t border-gray-100" />
+          {!noKeysRequired && (
+            <>
+              <div className="border-t border-gray-100" />
 
-          {/* Fields */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Vos clés</p>
-            {fields.map((field) => (
-              <div key={field.key}>
-                <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
-                <input
-                  type="password"
-                  placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
-                  value={values[field.key] || ""}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-                  disabled={!kvReady}
-                />
-              </div>
-            ))}
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Vos clés</p>
+                {fields.map((field) => (
+                  <div key={field.key}>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
+                    <input
+                      type="password"
+                      placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
+                      value={values[field.key] || ""}
+                      onChange={(e) => setValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+                      disabled={!kvReady}
+                    />
+                  </div>
+                ))}
 
-            {testStatus === "error" && testError && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                <span className="font-semibold">Connexion échouée —</span> {testError}
-              </div>
-            )}
-            {testStatus === "ok" && (
-              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
-                Connexion vérifiée ✓
-              </div>
-            )}
+                {testStatus === "error" && testError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    <span className="font-semibold">Connexion échouée —</span> {testError}
+                  </div>
+                )}
+                {testStatus === "ok" && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                    Connexion vérifiée ✓
+                  </div>
+                )}
 
+                <button
+                  onClick={handleSave}
+                  disabled={saving || testStatus === "testing" || !kvReady}
+                  className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {testStatus === "testing" ? "Vérification..." : saving ? "Enregistrement..." : "Vérifier et enregistrer"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {noKeysRequired && (
             <button
-              onClick={handleSave}
-              disabled={saving || testStatus === "testing" || !kvReady}
-              className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
             >
-              {testStatus === "testing" ? "Vérification..." : saving ? "Enregistrement..." : "Vérifier et enregistrer"}
+              Fermer
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -570,6 +601,12 @@ export function SettingsForm() {
   const renderCard = (serviceKey: string, service: ServiceInfo) => {
     const isOpen = expanded[serviceKey] ?? false;
     const isConfigured = service.configured;
+    const noKeys = service.noKeysRequired ?? false;
+    const statusLine = noKeys
+      ? "Disponible — aucune clé requise"
+      : isConfigured
+        ? `Configuré (${service.source === "kv" ? "interface" : "env vars"})`
+        : "Non configuré";
     return (
       <div key={serviceKey} className="rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="flex items-center gap-1 px-4 py-3">
@@ -583,11 +620,7 @@ export function SettingsForm() {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold leading-tight">{service.label}</p>
-              <p className="text-xs text-gray-500">
-                {isConfigured
-                  ? `Configuré (${service.source === "kv" ? "interface" : "env vars"})`
-                  : "Non configuré"}
-              </p>
+              <p className="text-xs text-gray-500">{statusLine}</p>
             </div>
           </button>
 
@@ -595,7 +628,7 @@ export function SettingsForm() {
             type="button"
             onClick={() => setHelpOpen(serviceKey)}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-            title="Comment obtenir les clés"
+            title={noKeys ? "Informations" : "Comment obtenir les clés"}
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z" />
@@ -607,7 +640,9 @@ export function SettingsForm() {
             onClick={() => toggleExpanded(serviceKey)}
             className="flex shrink-0 items-center gap-1.5 pl-1"
           >
-            <span className={`inline-flex h-2 w-2 rounded-full ${isConfigured ? "bg-green-500" : "bg-gray-300"}`} />
+            <span
+              className={`inline-flex h-2 w-2 rounded-full ${isConfigured || noKeys ? "bg-green-500" : "bg-gray-300"}`}
+            />
             <svg
               className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -619,37 +654,49 @@ export function SettingsForm() {
 
         {isOpen && (
           <div className="border-t border-gray-100 px-5 py-4 space-y-3">
-            {service.fields.map((field) => (
-              <div key={field.key}>
-                <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
-                <input
-                  type="password"
-                  placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
-                  value={formValues[serviceKey]?.[field.key] || ""}
-                  onChange={(e) => updateField(serviceKey, field.key, e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-                  disabled={!data.kvReady}
-                />
-              </div>
-            ))}
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={() => handleSave(serviceKey)}
-                disabled={saving === serviceKey || !data.kvReady}
-                className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving === serviceKey ? "Enregistrement..." : "Enregistrer"}
-              </button>
-              {isConfigured && service.source === "kv" && (
-                <button
-                  onClick={() => handleDelete(serviceKey)}
-                  disabled={deleting === serviceKey}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-                >
-                  {deleting === serviceKey ? "Suppression..." : "Supprimer"}
-                </button>
-              )}
-            </div>
+            {noKeys ? (
+              <p className="text-sm text-gray-600">
+                Ce service est exposé sur le point MCP sans saisie de clé. Outil :{" "}
+                <code className="rounded bg-gray-100 px-1 font-mono text-xs">
+                  clubigen_list_rss_articles
+                </code>
+                . Le serveur applique une limite de 10 requêtes vers le flux toutes les 5 minutes.
+              </p>
+            ) : (
+              <>
+                {service.fields.map((field) => (
+                  <div key={field.key}>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
+                    <input
+                      type="password"
+                      placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
+                      value={formValues[serviceKey]?.[field.key] || ""}
+                      onChange={(e) => updateField(serviceKey, field.key, e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
+                      disabled={!data.kvReady}
+                    />
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => handleSave(serviceKey)}
+                    disabled={saving === serviceKey || !data.kvReady}
+                    className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {saving === serviceKey ? "Enregistrement..." : "Enregistrer"}
+                  </button>
+                  {isConfigured && service.source === "kv" && (
+                    <button
+                      onClick={() => handleDelete(serviceKey)}
+                      disabled={deleting === serviceKey}
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {deleting === serviceKey ? "Suppression..." : "Supprimer"}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -664,6 +711,7 @@ export function SettingsForm() {
           label={data.services[helpOpen].label}
           fields={data.services[helpOpen].fields}
           kvReady={data.kvReady}
+          noKeysRequired={data.services[helpOpen].noKeysRequired}
           onClose={() => setHelpOpen(null)}
           onSave={async (values) => {
             const fields = data.services[helpOpen].fields;

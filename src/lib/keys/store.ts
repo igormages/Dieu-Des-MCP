@@ -6,7 +6,12 @@ export interface ServiceConfig {
 
 export const SERVICE_DEFINITIONS: Record<
   string,
-  { label: string; fields: { key: string; label: string; placeholder: string }[] }
+  {
+    label: string;
+    fields: { key: string; label: string; placeholder: string }[];
+    /** Affiché dans les réglages comme disponible sans saisie de clés (ex. flux public). */
+    noKeysRequired?: boolean;
+  }
 > = {
   github: {
     label: "GitHub",
@@ -208,6 +213,11 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  clubigen: {
+    label: "Club iGen",
+    fields: [],
+    noKeysRequired: true,
+  },
 };
 
 let redis: Redis | null = null;
@@ -332,15 +342,21 @@ export async function deleteServiceKeys(service: string): Promise<void> {
 }
 
 export async function getAllServiceStatuses(): Promise<
-  Record<string, { configured: boolean; source: "kv" | "env" | "none" }>
+  Record<string, { configured: boolean; source: "kv" | "env" | "none" | "builtin" }>
 > {
   const result: Record<
     string,
-    { configured: boolean; source: "kv" | "env" | "none" }
+    { configured: boolean; source: "kv" | "env" | "none" | "builtin" }
   > = {};
   const kv = getRedis();
 
   for (const service of Object.keys(SERVICE_DEFINITIONS)) {
+    const def = SERVICE_DEFINITIONS[service];
+    if (def.noKeysRequired) {
+      result[service] = { configured: true, source: "builtin" };
+      continue;
+    }
+
     if (kv) {
       const stored = await kv.get<ServiceConfig>(`${KEYS_PREFIX}${service}`);
       if (stored && Object.values(stored).every(Boolean)) {
