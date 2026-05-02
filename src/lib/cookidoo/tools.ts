@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   COOKIDOO,
+  cookidooDebugLogin,
   cookidooForceRelogin,
   cookidooGetHtml,
   cookidooLogout,
@@ -1264,6 +1265,23 @@ export function registerCookidooTools(server: McpServer): void {
       return {
         content: [
           { type: "text" as const, text: "Session Cookidoo effacée du cache." },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "cookidoo_debug_login",
+    "Diagnostic : exécute le flow de login Cookidoo étape par étape et renvoie pour chaque requête HTTP : URL de départ, URL finale (après redirections), statut, cookies posés, début du body. Permet d'identifier pourquoi un re-login échoue (mot de passe invalide, redirection imprévue, cookie manquant, etc.). N'expose pas le mot de passe ; l'email est masqué.",
+    {},
+    async () => {
+      const result = await cookidooDebugLogin();
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(result, null, 2),
+          },
         ],
       };
     }
