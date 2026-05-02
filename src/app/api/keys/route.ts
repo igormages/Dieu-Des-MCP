@@ -29,6 +29,7 @@ export async function GET() {
       label: string;
       configured: boolean;
       source: string;
+      noKeysRequired: boolean;
       fields: { key: string; label: string; placeholder: string; maskedValue: string | null }[];
     }
   > = {};
@@ -41,6 +42,7 @@ export async function GET() {
       label: def.label,
       configured: status.configured,
       source: status.source,
+      noKeysRequired: def.noKeysRequired ?? false,
       fields: def.fields.map((f) => ({
         ...f,
         maskedValue: keys?.[f.key] ? maskValue(keys[f.key]) : null,
@@ -71,6 +73,13 @@ export async function PUT(request: Request) {
   }
 
   const def = SERVICE_DEFINITIONS[service];
+  if (def.noKeysRequired) {
+    return NextResponse.json(
+      { error: "Ce service ne nécessite pas de clés API" },
+      { status: 400 }
+    );
+  }
+
   for (const field of def.fields) {
     if (!keys[field.key]?.trim()) {
       return NextResponse.json(
@@ -95,6 +104,11 @@ export async function DELETE(request: Request) {
 
   if (!service || !SERVICE_DEFINITIONS[service]) {
     return NextResponse.json({ error: "Service invalide" }, { status: 400 });
+  }
+
+  const def = SERVICE_DEFINITIONS[service];
+  if (def.noKeysRequired) {
+    return NextResponse.json({ success: true });
   }
 
   await deleteServiceKeys(service);
