@@ -127,6 +127,23 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Gérer les membres", available: false },
     ],
   },
+  openrouter: {
+    url: "https://openrouter.ai/keys",
+    urlLabel: "Ouvrir OpenRouter API Keys",
+    steps: [
+      { text: "Connecte-toi sur openrouter.ai puis va dans Settings → Keys." },
+      { text: "Crée une clé (Create Key) et copie la valeur (commence par sk-or-v1-...).", code: "sk-or-v1-..." },
+      { text: "Pour la génération d'images, ajoute aussi un Vercel Blob store et la variable BLOB_READ_WRITE_TOKEN au projet (pour publier les images générées)." },
+    ],
+    capabilities: [
+      { label: "Chat (200+ modèles : Claude, GPT, Gemini, Mistral, Llama…)", available: true },
+      { label: "Génération d'images (Gemini Flash Image, GPT-image, etc.)", available: true },
+      { label: "Vision (envoyer une image en input)", available: true },
+      { label: "Lister les modèles + filtres modalités", available: true },
+      { label: "Solde de crédits + usage par clé", available: true },
+      { label: "Détails de coût par génération", available: true },
+    ],
+  },
   vercel: {
     url: "https://vercel.com/account/tokens",
     urlLabel: "Ouvrir Vercel Tokens",

@@ -1,12 +1,21 @@
-import { getServiceKeys } from "@/lib/keys/store";
-import { getKvClient } from "@/lib/keys/store";
+import { getServiceKeys, getKvClient } from "@/lib/keys/store";
 
 const MARKET = "fr";
 const LANGUAGE = "fr-FR";
 const ORIGIN = "https://cookidoo.fr";
 const CIAM_HOST = "https://ciam.prod.cookidoo.vorwerk-digital.com";
 const SESSION_KEY = "cookidoo:session:default";
-const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12h
+/**
+ * TTL conservateur pour le cache Redis. Cookidoo invalide souvent ses cookies
+ * de session bien avant ça (~1-4h). Le code détecte les redirections vers la
+ * page de login et déclenche automatiquement un re-login : la valeur ne sert
+ * qu'à éviter de stocker indéfiniment des cookies périmés.
+ */
+const SESSION_TTL_SECONDS = 60 * 60 * 4;
+/** Au-delà de cette ancienneté, on revalide proactivement la session avant de l'utiliser. */
+const SESSION_REVALIDATE_AFTER_MS = 60 * 60 * 1000; // 1h
+/** Nombre d'essais maximum sur une requête (1 essai initial + 2 re-login). */
+const MAX_REQUEST_ATTEMPTS = 3;
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
@@ -25,8 +34,12 @@ interface SessionState {
   cookies: Record<string, Record<string, string>>;
   /** XSRF token dernièrement vu (entête X-XSRF-TOKEN ou cookie XSRF-TOKEN). */
   xsrfToken: string | null;
-  /** Timestamp d'expiration en ms (utilisé pour invalider proactivement). */
+  /** Timestamp d'expiration max en ms (cap dur, pas une garantie). */
   expiresAt: number;
+  /** Timestamp ms du dernier login réussi (utilisé pour la revalidation proactive). */
+  loggedInAt: number;
+  /** Timestamp ms de la dernière requête authentifiée réussie. */
+  lastValidatedAt: number;
 }
 
 class CookieJar {
@@ -75,7 +88,6 @@ class CookieJar {
 }
 
 function extractSetCookies(headers: Headers): string[] {
-  // Node's Headers.getSetCookie() exists in modern runtimes. Fallback to manual.
   const anyHeaders = headers as Headers & { getSetCookie?: () => string[] };
   if (typeof anyHeaders.getSetCookie === "function") {
     return anyHeaders.getSetCookie();
@@ -123,6 +135,22 @@ function hostOf(url: string): string {
   return new URL(url).host;
 }
 
+/**
+ * Détecte qu'une URL finale correspond à une page de login (donc que la session
+ * Cookidoo est expirée et qu'il faut se reconnecter). Cookidoo ne renvoie pas
+ * de 401 sur les requêtes : il redirige vers `/profile/<lang>/login` qui rebondit
+ * vers `ciam.prod.cookidoo.vorwerk-digital.com` (HTML 200).
+ */
+function isLoginRedirect(finalUrl: string): boolean {
+  const lower = finalUrl.toLowerCase();
+  return (
+    lower.startsWith(CIAM_HOST.toLowerCase()) ||
+    /\/profile\/[a-z-]+\/login(\?|$|#)/.test(lower) ||
+    lower.includes("login-srv/login") ||
+    lower.includes("/oauth2/authorize")
+  );
+}
+
 let cachedSession: SessionState | null = null;
 let inflightLogin: Promise<SessionState> | null = null;
 
@@ -159,7 +187,7 @@ async function getCredentials(): Promise<{ username: string; password: string }>
 
 /**
  * Effectue une requête HTTP avec gestion automatique des cookies et redirections manuelles.
- * Suit jusqu'à 6 redirections, en collectant les Set-Cookie à chaque étape.
+ * Suit jusqu'à 8 redirections, en collectant les Set-Cookie à chaque étape.
  */
 async function fetchWithJar(
   jar: CookieJar,
@@ -172,7 +200,7 @@ async function fetchWithJar(
     redirect: "manual",
     headers: { ...COMMON_HEADERS, ...(init.headers as Record<string, string> | undefined) },
   };
-  const maxRedirects = init.maxRedirects ?? 6;
+  const maxRedirects = init.maxRedirects ?? 8;
   for (let i = 0; i <= maxRedirects; i++) {
     const cookieHeader = jar.getCookieHeader(hostOf(currentUrl));
     const headers = new Headers(currentInit.headers as HeadersInit);
@@ -183,10 +211,8 @@ async function fetchWithJar(
     if (status >= 300 && status < 400) {
       const location = response.headers.get("location");
       if (!location) return { response, finalUrl: currentUrl };
-      // Pour les redirections, on bascule sur GET (sauf 307/308 qui doivent garder la méthode).
       const keepMethod = status === 307 || status === 308;
       const nextUrl = new URL(location, currentUrl).toString();
-      // Drain le body de la précédente réponse pour libérer la connexion.
       await response.text().catch(() => undefined);
       currentInit = {
         ...currentInit,
@@ -204,6 +230,7 @@ async function fetchWithJar(
 
 /**
  * Exécute le flow OAuth2 complet et retourne un état de session prêt à l'emploi.
+ * Idempotent et concurrent-safe via `inflightLogin`.
  */
 async function performLogin(): Promise<SessionState> {
   const { username, password } = await getCredentials();
@@ -217,12 +244,17 @@ async function performLogin(): Promise<SessionState> {
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     },
   });
-
-  // À ce stade on doit être sur la page de formulaire CIAM. On lit le HTML.
   const loginHtml = await initial.response.text();
   if (!initial.finalUrl.startsWith(CIAM_HOST)) {
+    // Cas particulier : on est déjà authentifié (cookies encore valides), on a atterri sur cookidoo.fr.
+    // C'est anormal pour un performLogin appelé après un clearSession, mais on tente quand même.
+    if (initial.finalUrl.startsWith(ORIGIN)) {
+      const xsrfMatch = loginHtml.match(/name="_csrf"\s+value="([^"]+)"/);
+      const state = await buildSession(jar, xsrfMatch?.[1] ?? null);
+      return state;
+    }
     throw new Error(
-      `Redirection inattendue vers ${initial.finalUrl} pendant l'init du login Cookidoo`
+      `Cookidoo : redirection inattendue vers ${initial.finalUrl} pendant l'init du login.`
     );
   }
 
@@ -230,7 +262,7 @@ async function performLogin(): Promise<SessionState> {
   const requestId = extractFormValue(loginHtml, "requestId");
   if (!requestId) {
     throw new Error(
-      "Impossible de trouver le requestId du formulaire de login CIAM (page modifiée ?)"
+      "Cookidoo : impossible de trouver le requestId du formulaire CIAM (format de page modifié)."
     );
   }
   const actionMatch = loginHtml.match(/<form[^>]+action="([^"]+)"/i);
@@ -238,12 +270,8 @@ async function performLogin(): Promise<SessionState> {
     ? new URL(actionMatch[1], initial.finalUrl).toString()
     : `${CIAM_HOST}/login-srv/login`;
 
-  // 3. POST des identifiants. La réponse 302 contient l'URL `oauth2/callback?code=...`.
-  const body = new URLSearchParams({
-    requestId,
-    username,
-    password,
-  }).toString();
+  // 3. POST des identifiants.
+  const body = new URLSearchParams({ requestId, username, password }).toString();
   const submit = await fetchWithJar(jar, action, {
     method: "POST",
     body,
@@ -255,30 +283,51 @@ async function performLogin(): Promise<SessionState> {
       referer: initial.finalUrl,
     },
   });
+  await submit.response.text().catch(() => undefined);
 
-  // À l'issue des redirections, on doit être authentifié sur cookidoo.fr.
-  const finalText = await submit.response.text();
   if (submit.response.status >= 400) {
     throw new Error(
-      `Échec du login Cookidoo (statut ${submit.response.status}). Vérifie email/mot de passe.`
+      `Cookidoo : login refusé (statut ${submit.response.status}). Vérifie email/mot de passe sur /settings.`
     );
   }
-  if (
-    finalText.includes("login-srv/login") ||
-    submit.finalUrl.includes("login-srv/login")
-  ) {
+  // Si on est encore sur CIAM après le POST, c'est que les identifiants ont été refusés.
+  if (submit.finalUrl.toLowerCase().startsWith(CIAM_HOST.toLowerCase())) {
     throw new Error(
-      "Login Cookidoo refusé : identifiants invalides ou compte verrouillé."
+      "Cookidoo : identifiants invalides ou compte verrouillé (toujours sur CIAM après POST). Mets à jour le mot de passe sur /settings."
     );
   }
 
-  const xsrfMatch = finalText.match(/name="_csrf"\s+value="([^"]+)"/);
-  const xsrfToken = xsrfMatch?.[1] ?? null;
+  // 4. Toujours visiter une page rendant un formulaire avec _csrf pour avoir un XSRF token frais.
+  const csrfPage = await fetchWithJar(jar, `${ORIGIN}/organize/${MARKET}/my-recipes`, {
+    method: "GET",
+    headers: {
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    },
+  });
+  if (isLoginRedirect(csrfPage.finalUrl)) {
+    throw new Error(
+      "Cookidoo : login en apparence réussi mais session immédiatement invalidée (compte sans abonnement actif ?)."
+    );
+  }
+  const csrfHtml = await csrfPage.response.text();
+  const xsrfFromHtml = csrfHtml.match(/name="_csrf"\s+value="([^"]+)"/)?.[1] ?? null;
+  const xsrfFromHeader = csrfPage.response.headers.get("x-xsrf-token");
 
+  return buildSession(jar, xsrfFromHeader ?? xsrfFromHtml);
+}
+
+async function buildSession(
+  jar: CookieJar,
+  xsrfToken: string | null
+): Promise<SessionState> {
+  const now = Date.now();
   const state: SessionState = {
     cookies: jar.toJSON(),
     xsrfToken,
-    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+    expiresAt: now + SESSION_TTL_SECONDS * 1000,
+    loggedInAt: now,
+    lastValidatedAt: now,
   };
   cachedSession = state;
   await persistSession(state);
@@ -292,7 +341,6 @@ function extractFormValue(html: string, name: string): string | null {
   );
   const m = html.match(regex);
   if (m) return m[1];
-  // ordre inverse value puis name
   const regex2 = new RegExp(
     `<input[^>]+value=["']([^"']+)["'][^>]+name=["']${name}["']`,
     "i"
@@ -300,11 +348,17 @@ function extractFormValue(html: string, name: string): string | null {
   return html.match(regex2)?.[1] ?? null;
 }
 
+/**
+ * Récupère la session en cache, ou déclenche un login. `force=true` invalide
+ * d'abord la session courante et reconnecte.
+ */
 async function getOrCreateSession(force = false): Promise<SessionState> {
-  if (!force && cachedSession && cachedSession.expiresAt > Date.now()) {
-    return cachedSession;
-  }
-  if (!force) {
+  if (force) {
+    await clearSession();
+  } else {
+    if (cachedSession && cachedSession.expiresAt > Date.now()) {
+      return cachedSession;
+    }
     const stored = await loadSessionFromKv();
     if (stored) {
       cachedSession = stored;
@@ -318,34 +372,36 @@ async function getOrCreateSession(force = false): Promise<SessionState> {
   return inflightLogin;
 }
 
-async function refreshXsrfFromHomepage(state: SessionState): Promise<string | null> {
+/**
+ * Si la session est ancienne (plus d'une heure depuis le dernier check), on la
+ * revalide proactivement avec un GET léger : si ça redirige vers le login, on
+ * force un re-login avant la requête réelle.
+ */
+async function ensureFreshSession(state: SessionState): Promise<SessionState> {
+  const ageMs = Date.now() - state.lastValidatedAt;
+  if (ageMs < SESSION_REVALIDATE_AFTER_MS) return state;
+
   const jar = new CookieJar(state.cookies);
-  const result = await fetchWithJar(jar, `${ORIGIN}/organize/${MARKET}/my-recipes`, {
+  const probe = await fetchWithJar(jar, `${ORIGIN}/profile/api/user`, {
     method: "GET",
-    headers: {
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    },
+    headers: { accept: "application/json,*/*;q=0.1" },
+    maxRedirects: 4,
   });
-  const xsrfHeader = result.response.headers.get("x-xsrf-token");
-  let token = xsrfHeader ?? null;
-  if (!token) {
-    const html = await result.response.text();
-    const m = html.match(/name="_csrf"\s+value="([^"]+)"/);
-    token = m?.[1] ?? null;
-  } else {
-    await result.response.text().catch(() => undefined);
+  await probe.response.text().catch(() => undefined);
+
+  if (probe.response.status === 200 && !isLoginRedirect(probe.finalUrl)) {
+    state.cookies = jar.toJSON();
+    state.lastValidatedAt = Date.now();
+    await persistSession(state);
+    return state;
   }
-  state.cookies = jar.toJSON();
-  state.xsrfToken = token;
-  await persistSession(state);
-  return token;
+  return await getOrCreateSession(true);
 }
 
 interface CookidooRequestOptions {
   /** Si true, n'inclut pas le X-XSRF-TOKEN (utile pour les GET HTML publics). */
   skipXsrf?: boolean;
-  /** Si true, retry une fois après un re-login lors d'un 401/403. Défaut true. */
+  /** Si true, retry après un re-login lors d'un 401/403/login-redirect. Défaut true. */
   autoRelogin?: boolean;
   /** Surcharge de Content-Type (défaut: application/json). */
   contentType?: string;
@@ -359,6 +415,8 @@ interface CookidooRequestOptions {
 
 /**
  * Effectue une requête authentifiée vers cookidoo.fr et renvoie la réponse JSON typée.
+ * Re-login automatique si la session est expirée (détecté via 401/403 ou redirection
+ * vers la page de login).
  */
 export async function cookidooRequest<T = unknown>(
   method: string,
@@ -370,9 +428,13 @@ export async function cookidooRequest<T = unknown>(
   const url = path.startsWith("http") ? path : `${ORIGIN}${path}`;
 
   let state = await getOrCreateSession();
-  let attempts = 0;
-  while (attempts < 2) {
-    attempts++;
+  state = await ensureFreshSession(state);
+
+  let attempt = 0;
+  let lastError: string | null = null;
+
+  while (attempt < MAX_REQUEST_ATTEMPTS) {
+    attempt++;
     const jar = new CookieJar(state.cookies);
     const headers: Record<string, string> = {
       accept: json ? "application/json, */*;q=0.1" : "*/*",
@@ -400,20 +462,30 @@ export async function cookidooRequest<T = unknown>(
     });
 
     state.cookies = jar.toJSON();
-    await persistSession(state);
-
     const status = result.response.status;
+
+    // Cas 1 : Cookidoo a redirigé vers le login (session expirée silencieusement).
+    if (isLoginRedirect(result.finalUrl)) {
+      await result.response.text().catch(() => undefined);
+      lastError = `redirection vers ${result.finalUrl}`;
+      if (!autoRelogin || attempt >= MAX_REQUEST_ATTEMPTS) {
+        throw new Error(
+          `Cookidoo : session expirée et re-login impossible après ${attempt} tentative(s). ${lastError}`
+        );
+      }
+      state = await getOrCreateSession(true);
+      continue;
+    }
+
+    // Cas 2 : 401/403 explicite (XSRF stale, ou session refusée).
     if (status === 401 || status === 403) {
-      if (!autoRelogin || attempts >= 2) {
-        const errText = await result.response.text().catch(() => "");
+      const errText = await result.response.text().catch(() => "");
+      lastError = `${status} ${errText.slice(0, 150)}`;
+      if (!autoRelogin || attempt >= MAX_REQUEST_ATTEMPTS) {
         throw new Error(`Cookidoo ${status}: ${errText.slice(0, 200)}`);
       }
-      // Tente d'abord de rafraîchir uniquement le XSRF, puis force un re-login.
-      const newToken = await refreshXsrfFromHomepage(state).catch(() => null);
-      if (!newToken) {
-        await clearSession();
-        state = await getOrCreateSession(true);
-      }
+      // On force un re-login (qui rafraîchit aussi le XSRF).
+      state = await getOrCreateSession(true);
       continue;
     }
 
@@ -424,13 +496,13 @@ export async function cookidooRequest<T = unknown>(
       );
     }
 
-    if (status === 204 || status === 205) return undefined as T;
-
+    // Succès : on persiste la session et on lit le body.
+    state.lastValidatedAt = Date.now();
     const xsrfHeader = result.response.headers.get("x-xsrf-token");
-    if (xsrfHeader) {
-      state.xsrfToken = xsrfHeader;
-      await persistSession(state);
-    }
+    if (xsrfHeader) state.xsrfToken = xsrfHeader;
+    await persistSession(state);
+
+    if (status === 204 || status === 205) return undefined as T;
 
     if (!json) {
       return (await result.response.text()) as unknown as T;
@@ -440,14 +512,20 @@ export async function cookidooRequest<T = unknown>(
     try {
       return JSON.parse(text) as T;
     } catch {
+      // Si on attendait du JSON mais qu'on a du HTML, c'est généralement signe d'un
+      // problème non détecté (ex: maintenance). On renvoie le texte brut.
       return text as unknown as T;
     }
   }
-  throw new Error("Cookidoo: nombre maximum de tentatives atteint");
+
+  throw new Error(
+    `Cookidoo : nombre maximum de tentatives atteint (${MAX_REQUEST_ATTEMPTS})${lastError ? ` — dernière erreur : ${lastError}` : ""}`
+  );
 }
 
 /**
  * GET HTML d'une page Cookidoo (utile pour scraper les pages organize/created-recipes).
+ * Détecte automatiquement les redirections vers le login et déclenche un re-login.
  */
 export async function cookidooGetHtml(path: string): Promise<string> {
   return cookidooRequest<string>("GET", path, undefined, {
@@ -467,7 +545,13 @@ export const COOKIDOO = {
   language: LANGUAGE,
 };
 
-/** Réinitialise la session en cache (utile pour un test "logout"). */
+/** Force une déconnexion locale (le cache + Redis). Le prochain appel reconnectera. */
 export async function cookidooLogout(): Promise<void> {
   await clearSession();
+}
+
+/** Force un re-login immédiat (utile pour un endpoint /api/cookidoo/refresh). */
+export async function cookidooForceRelogin(): Promise<{ ok: true; loggedInAt: number }> {
+  const state = await getOrCreateSession(true);
+  return { ok: true, loggedInAt: state.loggedInAt };
 }

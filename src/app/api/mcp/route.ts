@@ -6,6 +6,7 @@ import { registerMicrosoftTools } from "@/lib/microsoft/tools";
 import { registerAppleTools } from "@/lib/apple/tools";
 import { registerGoogleCloudTools } from "@/lib/googlecloud/tools";
 import { registerOpenAITools } from "@/lib/openai/tools";
+import { registerOpenRouterTools } from "@/lib/openrouter/tools";
 import { registerVercelTools } from "@/lib/vercel/tools";
 import { registerOvhTools } from "@/lib/ovh/tools";
 import { registerScalewayTools } from "@/lib/scaleway/tools";
@@ -26,6 +27,7 @@ const handler = createMcpHandler(
     registerAppleTools(server);
     registerGoogleCloudTools(server);
     registerOpenAITools(server);
+    registerOpenRouterTools(server);
     registerVercelTools(server);
     registerOvhTools(server);
     registerScalewayTools(server);
