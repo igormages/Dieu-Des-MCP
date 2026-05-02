@@ -363,3 +363,8 @@ export async function getAllServiceStatuses(): Promise<
 export function isKvConfigured(): boolean {
   return getRedis() !== null;
 }
+
+/** Redis Upstash partagé (KV) si les variables d’environnement sont définies. */
+export function getKvClient(): Redis | null {
+  return getRedis();
+}

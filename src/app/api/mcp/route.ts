@@ -13,6 +13,7 @@ import { registerHostingerTools } from "@/lib/hostinger/tools";
 import { registerWebflowTools } from "@/lib/webflow/tools";
 import { registerFeedlyTools } from "@/lib/feedly/tools";
 import { registerElevenLabsTools } from "@/lib/elevenlabs/tools";
+import { registerClubigenTools } from "@/lib/clubigen/tools";
 import { verifyBearerToken } from "@/lib/auth/verify";
 
 const handler = createMcpHandler(
@@ -31,6 +32,7 @@ const handler = createMcpHandler(
     registerWebflowTools(server);
     registerFeedlyTools(server);
     registerElevenLabsTools(server);
+    registerClubigenTools(server);
   },
   {
     capabilities: {
