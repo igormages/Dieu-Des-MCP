@@ -902,14 +902,14 @@ export function registerCookidooTools(server: McpServer): void {
       // Étape 2 : PATCH ingrédients (texte libre avec type INGREDIENT / TITLE pour les groupes)
       const ingredients = input.ingredientGroups.flatMap((g) => {
         const items: { type: string; text: string }[] = [];
-        if (g.name) items.push({ type: "TITLE", text: g.name });
+        if (g.name) items.push({ type: "title", text: g.name });
         for (const i of g.ingredients) {
           const parts: string[] = [];
           if (i.quantity !== undefined) parts.push(String(i.quantity));
           if (i.unit) parts.push(i.unit);
           parts.push(i.name);
           if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "INGREDIENT", text: parts.join(" ") });
+          items.push({ type: "ingredient", text: parts.join(" ") });
         }
         return items;
       });
@@ -924,7 +924,7 @@ export function registerCookidooTools(server: McpServer): void {
           s.direction !== undefined ||
           s.accessory !== undefined;
         return {
-          type: "STEP",
+          type: "step",
           text: s.text,
           annotations: hasSettings
             ? [
@@ -991,14 +991,14 @@ export function registerCookidooTools(server: McpServer): void {
       // PATCH ingrédients
       const ingredients = rest.ingredientGroups.flatMap((g) => {
         const items: { type: string; text: string }[] = [];
-        if (g.name) items.push({ type: "TITLE", text: g.name });
+        if (g.name) items.push({ type: "title", text: g.name });
         for (const i of g.ingredients) {
           const parts: string[] = [];
           if (i.quantity !== undefined) parts.push(String(i.quantity));
           if (i.unit) parts.push(i.unit);
           parts.push(i.name);
           if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "INGREDIENT", text: parts.join(" ") });
+          items.push({ type: "ingredient", text: parts.join(" ") });
         }
         return items;
       });
@@ -1013,7 +1013,7 @@ export function registerCookidooTools(server: McpServer): void {
           s.direction !== undefined ||
           s.accessory !== undefined;
         return {
-          type: "STEP",
+          type: "step",
           text: s.text,
           annotations: hasSettings
             ? [
