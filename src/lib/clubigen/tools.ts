@@ -5,7 +5,7 @@ import { fetchClubigenArticles } from "./client";
 export function registerClubigenTools(server: McpServer) {
   server.tool(
     "clubigen_list_rss_articles",
-    "Récupère les articles du flux RSS Clubigen. Important : ne pas appeler plus de 10 fois toutes les 5 minutes (limite du fournisseur). Préférer un seul appel et mettre en cache le résultat.",
+    "Récupère les articles complets du flux RSS Clubigen (titre, contenu HTML intégral, auteur, catégories, dates, lien). Important : ne pas appeler plus de 10 fois toutes les 5 minutes (limite du fournisseur). Préférer un seul appel et mettre en cache le résultat.",
     {
       limit: z
         .number()
