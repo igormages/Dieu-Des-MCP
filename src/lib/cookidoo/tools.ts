@@ -1100,17 +1100,19 @@ export function registerCookidooTools(server: McpServer): void {
         .describe("Type MIME (défaut image/jpeg)."),
     },
     async ({ recipeId, imageBase64, imageUrl, mimeType }) => {
-      let imageBytes: Uint8Array | null = null;
       const finalMime = mimeType ?? "image/jpeg";
-      if (imageBase64) {
-        imageBytes = Buffer.from(imageBase64, "base64");
-      } else if (imageUrl) {
-        const dl = await fetch(imageUrl);
-        if (!dl.ok) throw new Error(`Téléchargement de l'image échoué (${dl.status}).`);
-        imageBytes = new Uint8Array(await dl.arrayBuffer());
-      } else {
+      // atob + Uint8Array.from évite la dépendance à Buffer (@types/node)
+      const imageBytes: Uint8Array = await (async (): Promise<Uint8Array> => {
+        if (imageBase64) {
+          return Uint8Array.from(atob(imageBase64), (c) => c.charCodeAt(0));
+        }
+        if (imageUrl) {
+          const dl = await fetch(imageUrl);
+          if (!dl.ok) throw new Error(`Téléchargement de l'image échoué (${dl.status}).`);
+          return new Uint8Array(await dl.arrayBuffer());
+        }
         throw new Error("Fournir 'imageBase64' ou 'imageUrl'.");
-      }
+      })();
 
       // Étape 1 : obtenir la signature HMAC Cloudinary depuis Cookidoo
       const timestamp = Math.floor(Date.now() / 1000);
@@ -1126,7 +1128,7 @@ export function registerCookidooTools(server: McpServer): void {
 
       // Étape 2 : upload vers Cloudinary EU (cloud vorwerk-users-gc)
       const formData = new FormData();
-      formData.append("file", new Blob([new Uint8Array(imageBytes)], { type: finalMime }));
+      formData.append("file", new Blob([imageBytes.buffer as ArrayBuffer], { type: finalMime }));
       formData.append("api_key", "993585863591145");
       formData.append("upload_preset", "prod-customer-recipe-signed");
       formData.append("signature", sigRes.signature);

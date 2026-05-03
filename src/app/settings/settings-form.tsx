@@ -536,7 +536,7 @@ export function SettingsForm() {
 
   useEffect(() => {
     const timers = moveTimers.current;
-    return () => { Object.values(timers).forEach(clearTimeout); };
+    return () => { Object.values(timers).forEach((id) => clearTimeout(id as ReturnType<typeof setTimeout>)); };
   }, []);
 
   function showMessage(type: "success" | "error", text: string) {
@@ -614,7 +614,7 @@ export function SettingsForm() {
     );
   }
 
-  const entries = Object.entries(data.services);
+  const entries = Object.entries(data.services) as [string, ServiceInfo][];
   const unconfigured = entries.filter(([key, svc]) => !svc.configured || recentlySaved.has(key));
   const configured = entries.filter(([key, svc]) => svc.configured && !recentlySaved.has(key));
 
