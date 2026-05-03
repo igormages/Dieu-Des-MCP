@@ -909,7 +909,7 @@ export function registerCookidooTools(server: McpServer): void {
           if (i.unit) parts.push(i.unit);
           parts.push(i.name);
           if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "ingredient", text: parts.join(" ") });
+          items.push({ type: "text", text: parts.join(" ") });
         }
         return items;
       });
@@ -998,7 +998,7 @@ export function registerCookidooTools(server: McpServer): void {
           if (i.unit) parts.push(i.unit);
           parts.push(i.name);
           if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "ingredient", text: parts.join(" ") });
+          items.push({ type: "text", text: parts.join(" ") });
         }
         return items;
       });
