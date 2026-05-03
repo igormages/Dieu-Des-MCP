@@ -885,65 +885,88 @@ export function registerCookidooTools(server: McpServer): void {
     "Crée une nouvelle recette personnelle Thermomix complète (titre, ingrédients, étapes avec settings TM, photo optionnelle).",
     recipePayloadSchema,
     async (input) => {
-      const payload = {
-        title: input.title,
-        description: input.description,
-        portion: input.portion,
-        prepTime: input.prepTime,
-        totalTime: input.totalTime,
-        difficulty: input.difficulty,
-        tmversion: input.tmversion ?? "TM7",
-        recipeIngredientGroups: input.ingredientGroups.map((g) => ({
-          title: g.name,
-          ingredients: g.ingredients.map((i) => ({
-            ingredientNotation: i.name,
-            quantity: i.quantity !== undefined ? { value: i.quantity } : undefined,
-            unitNotation: i.unit,
-            preparation: i.preparation,
-            optional: i.optional ?? false,
-          })),
-        })),
-        steps: input.steps.map((s) => ({
-          text: s.text,
-          thermomixSettings:
-            s.time !== undefined ||
-            s.temperature !== undefined ||
-            s.speed !== undefined ||
-            s.direction !== undefined ||
-            s.accessory !== undefined
-              ? {
-                  time: s.time,
-                  temperature: s.temperature,
-                  speed: s.speed,
-                  direction: s.direction,
-                  accessory: s.accessory,
-                }
-              : undefined,
-        })),
-        tips: input.tips,
-        tags: input.tags,
-      };
-      const res = await cookidooRequest<{
-        id?: string;
-        ulid?: string;
-        editUrl?: string;
-        message?: string;
-      }>("POST", `/created-recipes/${COOKIDOO.language}/api/recipes`, payload, {
-        referer: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}`,
+      // Étape 1 : créer le squelette avec le titre uniquement
+      const created = await cookidooRequest<{ recipeId?: string }>(
+        "POST",
+        `/created-recipes/${COOKIDOO.language}`,
+        { recipeName: input.title },
+        { referer: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}` }
+      );
+      const recipeId = created.recipeId;
+      if (!recipeId)
+        throw new Error(
+          `Cookidoo : recipeId absent de la réponse de création. Réponse : ${JSON.stringify(created)}`
+        );
+      const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
+
+      // Étape 2 : PATCH ingrédients (texte libre avec type INGREDIENT / TITLE pour les groupes)
+      const ingredients = input.ingredientGroups.flatMap((g) => {
+        const items: { type: string; text: string }[] = [];
+        if (g.name) items.push({ type: "TITLE", text: g.name });
+        for (const i of g.ingredients) {
+          const parts: string[] = [];
+          if (i.quantity !== undefined) parts.push(String(i.quantity));
+          if (i.unit) parts.push(i.unit);
+          parts.push(i.name);
+          if (i.preparation) parts.push(`(${i.preparation})`);
+          items.push({ type: "INGREDIENT", text: parts.join(" ") });
+        }
+        return items;
       });
+      await cookidooRequest("PATCH", base, { ingredients });
+
+      // Étape 3 : PATCH instructions avec annotations MODE pour les settings Thermomix
+      const instructions = input.steps.map((s) => {
+        const hasSettings =
+          s.time !== undefined ||
+          s.temperature !== undefined ||
+          s.speed !== undefined ||
+          s.direction !== undefined ||
+          s.accessory !== undefined;
+        return {
+          type: "STEP",
+          text: s.text,
+          annotations: hasSettings
+            ? [
+                {
+                  type: "MODE",
+                  data: {
+                    time: s.time ?? null,
+                    temperature: s.temperature ?? null,
+                    speed: s.speed ?? null,
+                    direction: s.direction ?? null,
+                    accessory: s.accessory ?? null,
+                    pulseCount: null,
+                    power: null,
+                  },
+                },
+              ]
+            : [],
+        };
+      });
+      await cookidooRequest("PATCH", base, { instructions });
+
+      // Étape 4 : PATCH paramètres (temps, portions, version TM, description, etc.)
+      const settings: Record<string, unknown> = {};
+      if (input.totalTime !== undefined) settings.totalTime = input.totalTime;
+      if (input.prepTime !== undefined) settings.prepTime = input.prepTime;
+      if (input.portion)
+        settings.yield = { value: input.portion.quantity, unitText: input.portion.type ?? "portions" };
+      settings.tools = [input.tmversion ?? "TM7"];
+      if (input.description) settings.description = input.description;
+      if (input.difficulty) settings.difficulty = input.difficulty;
+      if (input.tips) settings.tips = input.tips;
+      if (input.tags?.length) settings.tags = input.tags;
+      await cookidooRequest("PATCH", base, settings);
+
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify(
               {
-                createdRecipeId: res.id ?? res.ulid,
-                editUrl:
-                  res.editUrl ??
-                  (res.id || res.ulid
-                    ? `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}/${res.id ?? res.ulid}/edit`
-                    : undefined),
-                response: res,
+                createdRecipeId: recipeId,
+                editUrl: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}/${recipeId}/edit`,
               },
               null,
               2
@@ -963,54 +986,73 @@ export function registerCookidooTools(server: McpServer): void {
     },
     async (input) => {
       const { recipeId, ...rest } = input;
-      const payload = {
-        title: rest.title,
-        description: rest.description,
-        portion: rest.portion,
-        prepTime: rest.prepTime,
-        totalTime: rest.totalTime,
-        difficulty: rest.difficulty,
-        tmversion: rest.tmversion ?? "TM7",
-        recipeIngredientGroups: rest.ingredientGroups.map((g) => ({
-          title: g.name,
-          ingredients: g.ingredients.map((i) => ({
-            ingredientNotation: i.name,
-            quantity: i.quantity !== undefined ? { value: i.quantity } : undefined,
-            unitNotation: i.unit,
-            preparation: i.preparation,
-            optional: i.optional ?? false,
-          })),
-        })),
-        steps: rest.steps.map((s) => ({
+      const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
+
+      // PATCH ingrédients
+      const ingredients = rest.ingredientGroups.flatMap((g) => {
+        const items: { type: string; text: string }[] = [];
+        if (g.name) items.push({ type: "TITLE", text: g.name });
+        for (const i of g.ingredients) {
+          const parts: string[] = [];
+          if (i.quantity !== undefined) parts.push(String(i.quantity));
+          if (i.unit) parts.push(i.unit);
+          parts.push(i.name);
+          if (i.preparation) parts.push(`(${i.preparation})`);
+          items.push({ type: "INGREDIENT", text: parts.join(" ") });
+        }
+        return items;
+      });
+      await cookidooRequest("PATCH", base, { ingredients });
+
+      // PATCH instructions/étapes
+      const instructions = rest.steps.map((s) => {
+        const hasSettings =
+          s.time !== undefined ||
+          s.temperature !== undefined ||
+          s.speed !== undefined ||
+          s.direction !== undefined ||
+          s.accessory !== undefined;
+        return {
+          type: "STEP",
           text: s.text,
-          thermomixSettings:
-            s.time !== undefined ||
-            s.temperature !== undefined ||
-            s.speed !== undefined ||
-            s.direction !== undefined ||
-            s.accessory !== undefined
-              ? {
-                  time: s.time,
-                  temperature: s.temperature,
-                  speed: s.speed,
-                  direction: s.direction,
-                  accessory: s.accessory,
-                }
-              : undefined,
-        })),
-        tips: rest.tips,
-        tags: rest.tags,
-      };
-      const res = await cookidooRequest<{ message?: string }>(
-        "PUT",
-        `/created-recipes/${COOKIDOO.language}/api/recipes/${recipeId}`,
-        payload
-      );
+          annotations: hasSettings
+            ? [
+                {
+                  type: "MODE",
+                  data: {
+                    time: s.time ?? null,
+                    temperature: s.temperature ?? null,
+                    speed: s.speed ?? null,
+                    direction: s.direction ?? null,
+                    accessory: s.accessory ?? null,
+                    pulseCount: null,
+                    power: null,
+                  },
+                },
+              ]
+            : [],
+        };
+      });
+      await cookidooRequest("PATCH", base, { instructions });
+
+      // PATCH paramètres
+      const settings: Record<string, unknown> = { recipeName: rest.title };
+      if (rest.totalTime !== undefined) settings.totalTime = rest.totalTime;
+      if (rest.prepTime !== undefined) settings.prepTime = rest.prepTime;
+      if (rest.portion)
+        settings.yield = { value: rest.portion.quantity, unitText: rest.portion.type ?? "portions" };
+      settings.tools = [rest.tmversion ?? "TM7"];
+      if (rest.description) settings.description = rest.description;
+      if (rest.difficulty) settings.difficulty = rest.difficulty;
+      if (rest.tips) settings.tips = rest.tips;
+      if (rest.tags?.length) settings.tags = rest.tags;
+      await cookidooRequest("PATCH", base, settings);
+
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ updated: recipeId, response: res }, null, 2),
+            text: JSON.stringify({ updated: recipeId }, null, 2),
           },
         ],
       };
@@ -1070,59 +1112,63 @@ export function registerCookidooTools(server: McpServer): void {
         throw new Error("Fournir 'imageBase64' ou 'imageUrl'.");
       }
 
-      // Étape 1 : demander une signature/upload params à Cookidoo.
-      const sig = await cookidooRequest<{
-        uploadUrl?: string;
-        signature?: string;
-        timestamp?: number;
-        apiKey?: string;
-        cloudName?: string;
-        publicId?: string;
-        folder?: string;
-      }>(
-        "GET",
-        `/created-recipes/${COOKIDOO.language}/api/upload-signature?recipeId=${recipeId}`
+      // Étape 1 : obtenir la signature HMAC Cloudinary depuis Cookidoo
+      const timestamp = Math.floor(Date.now() / 1000);
+      const sigRes = await cookidooRequest<{ signature?: string }>(
+        "POST",
+        `/created-recipes/${COOKIDOO.language}/image/signature`,
+        { timestamp, upload_preset: "prod-customer-recipe-signed" }
       );
+      if (!sigRes.signature)
+        throw new Error(
+          `Cookidoo : signature absente de la réponse. Réponse : ${JSON.stringify(sigRes)}`
+        );
 
-      const cloud = sig.cloudName ?? "tmecosys-ugc";
-      const uploadEndpoint = sig.uploadUrl ?? `https://api.cloudinary.com/v1_1/${cloud}/image/upload`;
+      // Étape 2 : upload vers Cloudinary EU (cloud vorwerk-users-gc)
       const formData = new FormData();
       formData.append("file", new Blob([new Uint8Array(imageBytes)], { type: finalMime }));
-      if (sig.apiKey) formData.append("api_key", sig.apiKey);
-      if (sig.signature) formData.append("signature", sig.signature);
-      if (sig.timestamp) formData.append("timestamp", String(sig.timestamp));
-      if (sig.folder) formData.append("folder", sig.folder);
-      if (sig.publicId) formData.append("public_id", sig.publicId);
+      formData.append("api_key", "993585863591145");
+      formData.append("upload_preset", "prod-customer-recipe-signed");
+      formData.append("signature", sigRes.signature);
+      formData.append("timestamp", String(timestamp));
 
-      const upload = await fetch(uploadEndpoint, {
-        method: "POST",
-        body: formData,
-      });
+      const upload = await fetch(
+        "https://api-eu.cloudinary.com/v1_1/vorwerk-users-gc/image/upload",
+        { method: "POST", body: formData }
+      );
       const uploadJson = (await upload.json().catch(() => ({}))) as {
         public_id?: string;
+        format?: string;
         secure_url?: string;
-        version?: number;
       };
       if (!upload.ok) {
-        throw new Error(`Upload image Cookidoo échoué (${upload.status}): ${JSON.stringify(uploadJson)}`);
+        throw new Error(
+          `Upload image Cloudinary échoué (${upload.status}): ${JSON.stringify(uploadJson)}`
+        );
+      }
+      if (!uploadJson.public_id || !uploadJson.format) {
+        throw new Error(
+          `Upload image : réponse Cloudinary inattendue : ${JSON.stringify(uploadJson)}`
+        );
       }
 
-      // Étape 3 : associer l'image à la recette via PATCH.
-      const patch = await cookidooRequest(
+      // Étape 3 : associer l'image à la recette via PATCH
+      await cookidooRequest(
         "PATCH",
-        `/created-recipes/${COOKIDOO.language}/api/recipes/${recipeId}/image`,
-        {
-          publicId: uploadJson.public_id,
-          version: uploadJson.version,
-          url: uploadJson.secure_url,
-        }
+        `/created-recipes/${COOKIDOO.language}/${recipeId}`,
+        { image: `${uploadJson.public_id}.${uploadJson.format}`, isImageOwnedByUser: false }
       );
+
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify(
-              { recipeId, imageUrl: uploadJson.secure_url, response: patch },
+              {
+                recipeId,
+                imageUrl: uploadJson.secure_url,
+                publicId: `${uploadJson.public_id}.${uploadJson.format}`,
+              },
               null,
               2
             ),
