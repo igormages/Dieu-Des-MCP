@@ -198,16 +198,15 @@ interface MyDayResponse {
 /**
  * Convertit nos groupes d'ingrédients structurés vers le body PATCH `ingredients`.
  *
- * En mai 2026 l'API Vorwerk valide chaque ligne avec un schéma strict : le champ
- * `type` doit être une des valeurs **minuscules** attendues par le backend (pas les
- * chaînes historiques du bundle JS navigateur comme `"INGREDIENT"` / `"TITLE"`).
+ * Vérifié par smoke test sur l’API réelle (mai 2026) : le `oneOf` ne reconnaît
+ * **que** `{ type: "INGREDIENT", text: string }` pour chaque entrée du tableau.
+ * Les valeurs `TITLE`, `TEXT`, `MEASURED`, `measured`, `title`, etc. renvoient
+ * `400 validationError` sur `body/ingredients/N/type`.
  *
- * Stratégie :
- *   - `{ type: "title", text }` — titre de groupe (ex. « Pour la pâte »)
- *   - `{ type: "measured", text }` — ligne avec quantité et/ou unité (mesurable)
- *   - `{ type: "ingredient", text }` — ligne purement textuelle (sans qté/unité)
- *
- * Chaque objet inclut toujours `type` + `text` pour satisfaire la validation serveur.
+ * Les **titres de groupe** (`ingredientGroups[].name`) sont donc ajoutés comme
+ * une ligne `INGREDIENT` dont le texte est uniquement le titre (sans quantité).
+ * Les quantités / unités restent dans la chaîne `text` des lignes suivantes,
+ * comme en mode non structuré sur le site Cookidoo.
  */
 function buildIngredientsPayload(
   groups: Array<{
@@ -220,10 +219,10 @@ function buildIngredientsPayload(
       optional?: boolean;
     }>;
   }>
-): Array<{ type: "ingredient" | "title" | "measured"; text: string }> {
-  const items: Array<{ type: "ingredient" | "title" | "measured"; text: string }> = [];
+): Array<{ type: "INGREDIENT"; text: string }> {
+  const items: Array<{ type: "INGREDIENT"; text: string }> = [];
   for (const g of groups) {
-    if (g.name) items.push({ type: "title", text: g.name });
+    if (g.name?.trim()) items.push({ type: "INGREDIENT", text: g.name.trim() });
     for (const i of g.ingredients) {
       const parts: string[] = [];
       if (i.quantity !== undefined) parts.push(String(i.quantity));
@@ -231,12 +230,7 @@ function buildIngredientsPayload(
       parts.push(i.name);
       if (i.preparation) parts.push(`(${i.preparation})`);
       if (i.optional) parts.push("(facultatif)");
-      const text = parts.join(" ");
-      const isMeasured = i.quantity !== undefined || Boolean(i.unit?.trim());
-      items.push({
-        type: isMeasured ? "measured" : "ingredient",
-        text,
-      });
+      items.push({ type: "INGREDIENT", text: parts.join(" ") });
     }
   }
   return items;
@@ -1062,7 +1056,12 @@ export function registerCookidooTools(server: McpServer): void {
     ingredientGroups: z
       .array(
         z.object({
-          name: z.string().optional().describe("Nom du groupe (ex: 'Pour la pâte')."),
+          name: z
+            .string()
+            .optional()
+            .describe(
+              "Nom du groupe (ex: 'Pour la pâte'). Envoyé comme une ligne INGREDIENT contenant uniquement ce texte (l'API Cookidoo n'expose pas de type dédié pour les titres de section)."
+            ),
           ingredients: z.array(ingredientSchema).describe("Ingrédients du groupe."),
         })
       )
