@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "cookidoo:har-check": "tsx scripts/cookidoo-har-parse-check.ts",
-    "cookidoo:smoke-e2e": "tsx scripts/cookidoo-smoke-e2e.ts"
+    "cookidoo:smoke-e2e": "tsx scripts/cookidoo-smoke-e2e.ts",
+    "test:cookidoo": "node --import tsx --test src/lib/cookidoo/customer-recipe-payloads.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",

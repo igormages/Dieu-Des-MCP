@@ -1,5 +1,11 @@
 /**
  * Corps JSON pour PATCH /created-recipes/{lang}/{id} (ingrédients + étapes Thermomix).
+ *
+ * Les annotations `{ type: "MODE", name, position, data }` sont rejetées par l’API web
+ * (mai 2026 : enums `type` / `name` non reconnus). Le format attendu pour les réglages TM
+ * est celui documenté pour les recettes perso : étapes `STEP` avec champs optionnels
+ * `time`, `temperature`, `speed`, etc. au même niveau que `text` (voir cookidoo-api /
+ * InstructionJSON côté Vorwerk).
  */
 
 /**
@@ -36,10 +42,6 @@ export function buildIngredientsPayload(
   return items;
 }
 
-/**
- * Convertit nos étapes structurées vers le format attendu par PATCH /created-recipes/{lang}/{id}.
- * Les annotations MODE exigent `name` + `position` (validation API Cookidoo).
- */
 function stepHasThermomixSettings(s: {
   time?: number;
   temperature?: number | "Varoma" | "Ebullition";
@@ -56,17 +58,20 @@ function stepHasThermomixSettings(s: {
   return false;
 }
 
-function inferThermomixModeName(s: {
+export type InstructionStepPayload = {
+  type: "STEP";
+  text: string;
+  time?: number;
   temperature?: number | "Varoma" | "Ebullition";
   speed?: number | "Mijotage" | "Petrir";
-}): string {
-  if (s.speed === "Petrir") return "KNEAD";
-  if (s.speed === "Mijotage") return "COOK";
-  if (s.temperature === "Varoma" || s.temperature === "Ebullition") return "STEAM";
-  if (typeof s.speed === "number" && s.speed >= 8) return "TURBO";
-  return "COOK";
-}
+  direction?: "normal" | "reverse";
+  accessory?: string;
+};
 
+/**
+ * Convertit nos étapes structurées vers le tableau `instructions` du PATCH.
+ * Pas de bloc `annotations` / MODE : l’API Cookidoo web attend les paramètres TM sur l’étape.
+ */
 export function buildInstructionsPayload(
   steps: Array<{
     text: string;
@@ -76,42 +81,21 @@ export function buildInstructionsPayload(
     direction?: "normal" | "reverse";
     accessory?: string;
   }>
-): Array<{
-  type: "STEP";
-  text: string;
-  annotations?: Array<{
-    type: "MODE";
-    name: string;
-    position: { offset: number; length: number };
-    data: Record<string, unknown>;
-  }>;
-}> {
+): InstructionStepPayload[] {
   return steps.map((s) => {
-    const hasSettings = stepHasThermomixSettings(s);
-    const step: ReturnType<typeof buildInstructionsPayload>[number] = {
+    const step: InstructionStepPayload = {
       type: "STEP",
       text: s.text,
     };
-    if (hasSettings) {
-      const textLen = s.text.length;
-      step.annotations = [
-        {
-          type: "MODE",
-          name: inferThermomixModeName(s),
-          position: { offset: 0, length: textLen },
-          data: {
-            time: s.time ?? null,
-            temperature: s.temperature ?? null,
-            speed: s.speed ?? null,
-            direction: s.direction ?? null,
-            accessory: s.accessory ?? null,
-            pulseCount: null,
-            pulseCountMax: null,
-            power: null,
-          },
-        },
-      ];
-    }
+    if (!stepHasThermomixSettings(s)) return step;
+
+    if (s.time !== undefined && s.time !== null) step.time = s.time;
+    if (s.temperature !== undefined && s.temperature !== null) step.temperature = s.temperature;
+    if (s.speed !== undefined && s.speed !== null) step.speed = s.speed;
+    if (s.direction !== undefined && s.direction !== null) step.direction = s.direction;
+    const acc = s.accessory?.trim();
+    if (acc) step.accessory = acc;
+
     return step;
   });
 }
