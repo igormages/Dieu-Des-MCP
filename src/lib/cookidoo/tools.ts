@@ -8,7 +8,12 @@ import {
   cookidooLogout,
   cookidooRequest,
 } from "./client";
-import { buildIngredientsPayload, buildInstructionsPayload } from "./customer-recipe-payloads";
+import {
+  buildIngredientsPayload,
+  buildInstructionsPayload,
+  isCookidooCustomerRecipeId,
+  normalizeCookidooYieldUnitText,
+} from "./customer-recipe-payloads";
 import { decodeHtml, extractAllRecipeTiles } from "./parsing";
 
 const ALGOLIA_APP_ID = "3TA8NT85XJ";
@@ -453,14 +458,32 @@ export function registerCookidooTools(server: McpServer): void {
       recipeIds: z
         .array(z.string())
         .min(1)
-        .describe("Liste des IDs de recettes à ajouter (ex: ['r617774'])."),
+        .describe(
+          "IDs recettes : officielles `r…` → POST add-recipes ; perso ULID `01…` → POST recipes/add (source CUSTOMER). Ne pas mélanger les deux dans un même appel."
+        ),
     },
     async ({ recipeIds }) => {
-      const res = await cookidooRequest<AddedShoppingResponse>(
-        "POST",
-        `/shopping/${COOKIDOO.market}/add-recipes`,
-        { recipeIDs: recipeIds }
-      );
+      const customer = recipeIds.filter((id) => isCookidooCustomerRecipeId(id));
+      const vorwerk = recipeIds.filter((id) => !isCookidooCustomerRecipeId(id));
+      if (customer.length > 0 && vorwerk.length > 0) {
+        throw new Error(
+          "Mélange interdit : recettes perso (ULID 01…) et officielles (r…) dans un seul appel. Enchaîne deux appels distincts."
+        );
+      }
+      const res =
+        customer.length > 0
+          ? await cookidooRequest<AddedShoppingResponse>(
+              "POST",
+              `/shopping/${COOKIDOO.market}/recipes/add`,
+              {
+                recipeIDs: customer.map((id) => ({ id, source: "CUSTOMER" })),
+              }
+            )
+          : await cookidooRequest<AddedShoppingResponse>(
+              "POST",
+              `/shopping/${COOKIDOO.market}/add-recipes`,
+              { recipeIDs: vorwerk }
+            );
       return {
         content: [
           {
@@ -908,7 +931,12 @@ export function registerCookidooTools(server: McpServer): void {
     portion: z
       .object({
         quantity: z.number().describe("Nombre de portions."),
-        type: z.string().optional().describe("Type de portion (personne, pièce, ...)."),
+        type: z
+          .string()
+          .optional()
+          .describe(
+            "Texte unité pour l’API (`yield.unitText`) : valeur fermée côté Cookidoo ; `portion` est sûr. Synonymes courants (portions, personnes) sont normalisés en `portion`."
+          ),
       })
       .optional(),
     prepTime: z.number().optional().describe("Temps de préparation en secondes."),
@@ -966,7 +994,10 @@ export function registerCookidooTools(server: McpServer): void {
       if (input.totalTime !== undefined) settings.totalTime = input.totalTime;
       if (input.prepTime !== undefined) settings.prepTime = input.prepTime;
       if (input.portion)
-        settings.yield = { value: input.portion.quantity, unitText: input.portion.type ?? "portions" };
+        settings.yield = {
+          value: input.portion.quantity,
+          unitText: normalizeCookidooYieldUnitText(input.portion.type),
+        };
       settings.tools = [input.tmversion ?? "TM7"];
       if (input.description) settings.description = input.description;
       if (input.difficulty) settings.difficulty = input.difficulty;
@@ -1013,7 +1044,10 @@ export function registerCookidooTools(server: McpServer): void {
       if (rest.totalTime !== undefined) settings.totalTime = rest.totalTime;
       if (rest.prepTime !== undefined) settings.prepTime = rest.prepTime;
       if (rest.portion)
-        settings.yield = { value: rest.portion.quantity, unitText: rest.portion.type ?? "portions" };
+        settings.yield = {
+          value: rest.portion.quantity,
+          unitText: normalizeCookidooYieldUnitText(rest.portion.type),
+        };
       settings.tools = [rest.tmversion ?? "TM7"];
       if (rest.description) settings.description = rest.description;
       if (rest.difficulty) settings.difficulty = rest.difficulty;

@@ -3,7 +3,26 @@ import { describe, it } from "node:test";
 import {
   buildIngredientsPayload,
   buildInstructionsPayload,
+  isCookidooCustomerRecipeId,
+  normalizeCookidooYieldUnitText,
 } from "./customer-recipe-payloads";
+
+describe("isCookidooCustomerRecipeId", () => {
+  it("détecte les ULID perso 01…", () => {
+    assert.equal(isCookidooCustomerRecipeId("01KQSFHCSFX63R85KHW78ZZ4XY"), true);
+    assert.equal(isCookidooCustomerRecipeId("r617774"), false);
+  });
+});
+
+describe("normalizeCookidooYieldUnitText", () => {
+  it("normalise portions / personnes vers portion", () => {
+    assert.equal(normalizeCookidooYieldUnitText(), "portion");
+    assert.equal(normalizeCookidooYieldUnitText("  "), "portion");
+    assert.equal(normalizeCookidooYieldUnitText("portions"), "portion");
+    assert.equal(normalizeCookidooYieldUnitText("personnes"), "portion");
+    assert.equal(normalizeCookidooYieldUnitText("portion"), "portion");
+  });
+});
 
 describe("buildIngredientsPayload", () => {
   it("produit uniquement des lignes INGREDIENT avec texte", () => {

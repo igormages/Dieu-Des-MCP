@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   await cookidooRequest("PATCH", base, {
     totalTime: 600,
     prepTime: 120,
-    yield: { value: 2, unitText: "portions" },
+    yield: { value: 2, unitText: "portion" },
     tools: ["TM7"],
     description: "Recette de test automatisé MCP.",
     difficulty: "easy",
@@ -107,20 +107,13 @@ async function main(): Promise<void> {
     console.log("   Trouvée :", found.title.trim(), `(id ${found.id})`);
   }
 
-  console.log("5) Ajout liste de courses…");
-  try {
-    const shop = await cookidooRequest<{ message?: string; data?: unknown }>(
-      "POST",
-      `/shopping/${COOKIDOO.market}/add-recipes`,
-      { recipeIDs: [recipeId] }
-    );
-    console.log("   OK :", shop.message ?? JSON.stringify(shop).slice(0, 200));
-  } catch (e) {
-    console.error(
-      "   Échec add-recipes (souvent normal si l’API attend un autre schéma pour les recettes perso) :",
-      e instanceof Error ? e.message : e
-    );
-  }
+  console.log("5) Ajout liste de courses (recettes perso → /recipes/add + source CUSTOMER)…");
+  const shop = await cookidooRequest<{ message?: string; data?: unknown }>(
+    "POST",
+    `/shopping/${COOKIDOO.market}/recipes/add`,
+    { recipeIDs: [{ id: recipeId, source: "CUSTOMER" }] }
+  );
+  console.log("   OK :", shop.message ?? JSON.stringify(shop).slice(0, 200));
 
   if (process.env.COOKIDOO_E2E_DELETE === "1") {
     console.log("6) Suppression recette de test…");

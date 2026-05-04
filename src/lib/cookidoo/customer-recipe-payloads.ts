@@ -1,3 +1,19 @@
+/** ULID recette perso Cookidoo (26 caractères, préfixe 01). */
+export function isCookidooCustomerRecipeId(id: string): boolean {
+  return /^01[A-Za-z0-9]{24}$/.test(id.trim());
+}
+
+/**
+ * `unitText` du PATCH `yield` : l’API n’accepte qu’un petit ensemble (ex. `portion`), pas `portions`.
+ */
+export function normalizeCookidooYieldUnitText(userUnit?: string | null): string {
+  const raw = (userUnit ?? "").trim().toLowerCase();
+  if (!raw || raw === "portions" || raw === "personnes" || raw === "personne" || raw === "pers")
+    return "portion";
+  if (raw === "portion") return "portion";
+  return (userUnit ?? "").trim();
+}
+
 /**
  * Corps JSON pour PATCH /created-recipes/{lang}/{id} (ingrédients + étapes Thermomix).
  *
