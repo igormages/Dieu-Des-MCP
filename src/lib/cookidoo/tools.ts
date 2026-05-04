@@ -63,6 +63,19 @@ interface AlgoliaResults {
   }>;
 }
 
+/**
+ * Valeur `format` pour POST /created-recipes/.../image/signature.
+ * L’API attend un schéma Cloudinary Upload Widget : `source` = "uw", `format` en majuscules (ex. PNG, JPG).
+ */
+function cookidooImageSignatureFormat(mimeType: string): string {
+  const mime = mimeType.split(";")[0]?.trim().toLowerCase() ?? "image/jpeg";
+  if (mime === "image/png") return "PNG";
+  if (mime === "image/webp") return "WEBP";
+  if (mime === "image/gif") return "GIF";
+  if (mime === "image/jpeg" || mime === "image/jpg") return "JPG";
+  return "JPG";
+}
+
 async function algoliaSearch(payload: unknown): Promise<AlgoliaResults> {
   const apiKey = await getAlgoliaToken();
   const url = `https://${ALGOLIA_HOST}/1/indexes/*/queries?x-algolia-agent=${encodeURIComponent(
@@ -1130,10 +1143,16 @@ export function registerCookidooTools(server: McpServer): void {
 
       // Étape 1 : obtenir la signature HMAC Cloudinary depuis Cookidoo
       const timestamp = Math.floor(Date.now() / 1000);
+      const signatureFormat = cookidooImageSignatureFormat(finalMime);
       const sigRes = await cookidooRequest<{ signature?: string }>(
         "POST",
         `/created-recipes/${COOKIDOO.language}/image/signature`,
-        { timestamp, upload_preset: "prod-customer-recipe-signed" }
+        {
+          source: "uw",
+          format: signatureFormat,
+          timestamp,
+          upload_preset: "prod-customer-recipe-signed",
+        }
       );
       if (!sigRes.signature)
         throw new Error(
