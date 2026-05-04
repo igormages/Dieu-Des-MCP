@@ -196,20 +196,18 @@ interface MyDayResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * Convertit nos groupes d'ingrédients structurés (avec quantité/unité/préparation
- * en champs séparés) vers le format flat attendu par PATCH /created-recipes/{lang}/{id}.
+ * Convertit nos groupes d'ingrédients structurés vers le body PATCH `ingredients`.
  *
- * Format confirmé par lecture du bundle JS de Cookidoo (pl-customer-recipes.js) :
- *   - Type d'ingrédient : "INGREDIENT" (MAJUSCULES) — voir `getType(){return"INGREDIENT"}`
- *     et `dispatchSaveEvent(){let t={type:"INGREDIENT",text:...}}`
- *   - Type de titre de groupe : "TITLE" (MAJUSCULES) — déduit par symétrie avec STEP/INGREDIENT
- *   - Body envoyé par l'app web :
- *       { type: "INGREDIENT", text: "300 g de saumon (en cubes)" }
- *       { type: "TITLE", text: "Pour la pâte" }
+ * En mai 2026 l'API Vorwerk valide chaque ligne avec un schéma strict : le champ
+ * `type` doit être une des valeurs **minuscules** attendues par le backend (pas les
+ * chaînes historiques du bundle JS navigateur comme `"INGREDIENT"` / `"TITLE"`).
  *
- * Note : le bundle utilise aussi des annotations `VOLUME` pour la quantité structurée
- * (feature flag `structured-ingredients`), mais le mode texte simple suffit pour créer
- * une recette éditable.
+ * Stratégie :
+ *   - `{ type: "title", text }` — titre de groupe (ex. « Pour la pâte »)
+ *   - `{ type: "measured", text }` — ligne avec quantité et/ou unité (mesurable)
+ *   - `{ type: "ingredient", text }` — ligne purement textuelle (sans qté/unité)
+ *
+ * Chaque objet inclut toujours `type` + `text` pour satisfaire la validation serveur.
  */
 function buildIngredientsPayload(
   groups: Array<{
@@ -222,10 +220,10 @@ function buildIngredientsPayload(
       optional?: boolean;
     }>;
   }>
-): Array<{ type: "INGREDIENT" | "TITLE"; text: string }> {
-  const items: Array<{ type: "INGREDIENT" | "TITLE"; text: string }> = [];
+): Array<{ type: "ingredient" | "title" | "measured"; text: string }> {
+  const items: Array<{ type: "ingredient" | "title" | "measured"; text: string }> = [];
   for (const g of groups) {
-    if (g.name) items.push({ type: "TITLE", text: g.name });
+    if (g.name) items.push({ type: "title", text: g.name });
     for (const i of g.ingredients) {
       const parts: string[] = [];
       if (i.quantity !== undefined) parts.push(String(i.quantity));
@@ -233,7 +231,12 @@ function buildIngredientsPayload(
       parts.push(i.name);
       if (i.preparation) parts.push(`(${i.preparation})`);
       if (i.optional) parts.push("(facultatif)");
-      items.push({ type: "INGREDIENT", text: parts.join(" ") });
+      const text = parts.join(" ");
+      const isMeasured = i.quantity !== undefined || Boolean(i.unit?.trim());
+      items.push({
+        type: isMeasured ? "measured" : "ingredient",
+        text,
+      });
     }
   }
   return items;
