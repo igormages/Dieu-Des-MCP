@@ -192,6 +192,116 @@ interface MyDayResponse {
 }
 
 /* ------------------------------------------------------------------ */
+/* Helpers payload Cookidoo                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Convertit nos groupes d'ingrédients structurés (avec quantité/unité/préparation
+ * en champs séparés) vers le format flat attendu par PATCH /created-recipes/{lang}/{id}.
+ *
+ * Format confirmé par lecture du bundle JS de Cookidoo (pl-customer-recipes.js) :
+ *   - Type d'ingrédient : "INGREDIENT" (MAJUSCULES) — voir `getType(){return"INGREDIENT"}`
+ *     et `dispatchSaveEvent(){let t={type:"INGREDIENT",text:...}}`
+ *   - Type de titre de groupe : "TITLE" (MAJUSCULES) — déduit par symétrie avec STEP/INGREDIENT
+ *   - Body envoyé par l'app web :
+ *       { type: "INGREDIENT", text: "300 g de saumon (en cubes)" }
+ *       { type: "TITLE", text: "Pour la pâte" }
+ *
+ * Note : le bundle utilise aussi des annotations `VOLUME` pour la quantité structurée
+ * (feature flag `structured-ingredients`), mais le mode texte simple suffit pour créer
+ * une recette éditable.
+ */
+function buildIngredientsPayload(
+  groups: Array<{
+    name?: string;
+    ingredients: Array<{
+      name: string;
+      quantity?: number;
+      unit?: string;
+      preparation?: string;
+      optional?: boolean;
+    }>;
+  }>
+): Array<{ type: "INGREDIENT" | "TITLE"; text: string }> {
+  const items: Array<{ type: "INGREDIENT" | "TITLE"; text: string }> = [];
+  for (const g of groups) {
+    if (g.name) items.push({ type: "TITLE", text: g.name });
+    for (const i of g.ingredients) {
+      const parts: string[] = [];
+      if (i.quantity !== undefined) parts.push(String(i.quantity));
+      if (i.unit) parts.push(i.unit);
+      parts.push(i.name);
+      if (i.preparation) parts.push(`(${i.preparation})`);
+      if (i.optional) parts.push("(facultatif)");
+      items.push({ type: "INGREDIENT", text: parts.join(" ") });
+    }
+  }
+  return items;
+}
+
+/**
+ * Convertit nos étapes structurées (avec time/temperature/speed/direction/accessory
+ * en champs séparés) vers le format flat attendu par PATCH /created-recipes/{lang}/{id}.
+ *
+ * Format confirmé par lecture du bundle JS de Cookidoo (pl-customer-recipes.js) :
+ *   - Type d'étape : "STEP" (MAJUSCULES) — voir `s={type:"STEP",text:...}`
+ *   - Annotations Thermomix : type "MODE" (MAJUSCULES) — voir `getType(){return"MODE"}`
+ *     et `getAnnotation(){return{type:"MODE",name:...,data:{speed,direction,temperature,
+ *     time,pulseCount,pulseCountMax,accessory,power}}}`
+ *   - Le champ `name` du MODE est un identifiant de mode prédéfini (BLEND, DOUGH, TURBO,
+ *     STEAM, COOK, KNEAD…). Optionnel : si on ne le fournit pas, l'app affichera juste
+ *     les paramètres bruts.
+ */
+function buildInstructionsPayload(
+  steps: Array<{
+    text: string;
+    time?: number;
+    temperature?: number | "Varoma" | "Ebullition";
+    speed?: number | "Mijotage" | "Petrir";
+    direction?: "normal" | "reverse";
+    accessory?: string;
+  }>
+): Array<{
+  type: "STEP";
+  text: string;
+  annotations?: Array<{
+    type: "MODE";
+    data: Record<string, unknown>;
+  }>;
+}> {
+  return steps.map((s) => {
+    const hasSettings =
+      s.time !== undefined ||
+      s.temperature !== undefined ||
+      s.speed !== undefined ||
+      s.direction !== undefined ||
+      s.accessory !== undefined;
+    const step: ReturnType<typeof buildInstructionsPayload>[number] = {
+      type: "STEP",
+      text: s.text,
+    };
+    if (hasSettings) {
+      step.annotations = [
+        {
+          type: "MODE",
+          data: {
+            time: s.time ?? null,
+            temperature: s.temperature ?? null,
+            speed: s.speed ?? null,
+            direction: s.direction ?? null,
+            accessory: s.accessory ?? null,
+            pulseCount: null,
+            pulseCountMax: null,
+            power: null,
+          },
+        },
+      ];
+    }
+    return step;
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Outils MCP                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -982,51 +1092,10 @@ export function registerCookidooTools(server: McpServer): void {
         );
       const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
 
-      // Étape 2 : PATCH ingrédients (texte libre avec type INGREDIENT / TITLE pour les groupes)
-      const ingredients = input.ingredientGroups.flatMap((g) => {
-        const items: { type: string; text: string }[] = [];
-        if (g.name) items.push({ type: "title", text: g.name });
-        for (const i of g.ingredients) {
-          const parts: string[] = [];
-          if (i.quantity !== undefined) parts.push(String(i.quantity));
-          if (i.unit) parts.push(i.unit);
-          parts.push(i.name);
-          if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "text", text: parts.join(" ") });
-        }
-        return items;
-      });
+      const ingredients = buildIngredientsPayload(input.ingredientGroups);
       await cookidooRequest("PATCH", base, { ingredients });
 
-      // Étape 3 : PATCH instructions avec annotations MODE pour les settings Thermomix
-      const instructions = input.steps.map((s) => {
-        const hasSettings =
-          s.time !== undefined ||
-          s.temperature !== undefined ||
-          s.speed !== undefined ||
-          s.direction !== undefined ||
-          s.accessory !== undefined;
-        return {
-          type: "step",
-          text: s.text,
-          annotations: hasSettings
-            ? [
-                {
-                  type: "MODE",
-                  data: {
-                    time: s.time ?? null,
-                    temperature: s.temperature ?? null,
-                    speed: s.speed ?? null,
-                    direction: s.direction ?? null,
-                    accessory: s.accessory ?? null,
-                    pulseCount: null,
-                    power: null,
-                  },
-                },
-              ]
-            : [],
-        };
-      });
+      const instructions = buildInstructionsPayload(input.steps);
       await cookidooRequest("PATCH", base, { instructions });
 
       // Étape 4 : PATCH paramètres (temps, portions, version TM, description, etc.)
@@ -1071,54 +1140,12 @@ export function registerCookidooTools(server: McpServer): void {
       const { recipeId, ...rest } = input;
       const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
 
-      // PATCH ingrédients
-      const ingredients = rest.ingredientGroups.flatMap((g) => {
-        const items: { type: string; text: string }[] = [];
-        if (g.name) items.push({ type: "title", text: g.name });
-        for (const i of g.ingredients) {
-          const parts: string[] = [];
-          if (i.quantity !== undefined) parts.push(String(i.quantity));
-          if (i.unit) parts.push(i.unit);
-          parts.push(i.name);
-          if (i.preparation) parts.push(`(${i.preparation})`);
-          items.push({ type: "text", text: parts.join(" ") });
-        }
-        return items;
-      });
+      const ingredients = buildIngredientsPayload(rest.ingredientGroups);
       await cookidooRequest("PATCH", base, { ingredients });
 
-      // PATCH instructions/étapes
-      const instructions = rest.steps.map((s) => {
-        const hasSettings =
-          s.time !== undefined ||
-          s.temperature !== undefined ||
-          s.speed !== undefined ||
-          s.direction !== undefined ||
-          s.accessory !== undefined;
-        return {
-          type: "step",
-          text: s.text,
-          annotations: hasSettings
-            ? [
-                {
-                  type: "MODE",
-                  data: {
-                    time: s.time ?? null,
-                    temperature: s.temperature ?? null,
-                    speed: s.speed ?? null,
-                    direction: s.direction ?? null,
-                    accessory: s.accessory ?? null,
-                    pulseCount: null,
-                    power: null,
-                  },
-                },
-              ]
-            : [],
-        };
-      });
+      const instructions = buildInstructionsPayload(rest.steps);
       await cookidooRequest("PATCH", base, { instructions });
 
-      // PATCH paramètres
       const settings: Record<string, unknown> = { recipeName: rest.title };
       if (rest.totalTime !== undefined) settings.totalTime = rest.totalTime;
       if (rest.prepTime !== undefined) settings.prepTime = rest.prepTime;
