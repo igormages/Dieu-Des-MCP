@@ -89,25 +89,60 @@ function extractMeta(html: string, property: string): string | null {
   return m?.[1] ?? null;
 }
 
+function extractTileImageFromBlock(blockHtml: string): string | null {
+  return (
+    blockHtml.match(/data-src="([^"]+)"/)?.[1] ??
+    blockHtml.match(/<img[^>]+src="([^"]+)"/)?.[1] ??
+    null
+  );
+}
+
+/**
+ * Extrait les tuiles liste type « Mes créations » / favoris.
+ * Sur `/created-recipes/{lang}`, Cookidoo utilise `id="cr-{ULID}"` sans `data-recipe-id`
+ * (les recettes officielles gardent `data-recipe-id="r…"`).
+ */
 function extractAllRecipeTiles(html: string): Array<{
   id: string;
   title: string;
   image: string | null;
   duration: string | null;
 }> {
-  const tiles: Array<{ id: string; title: string; image: string | null; duration: string | null }> =
-    [];
-  const tileRegex =
+  type Tile = { id: string; title: string; image: string | null; duration: string | null };
+  const tiles: Tile[] = [];
+  const seen = new Set<string>();
+
+  function pushTile(id: string, title: string, block: string, duration: string | null) {
+    if (seen.has(id)) return;
+    seen.add(id);
+    tiles.push({
+      id,
+      title,
+      image: extractTileImageFromBlock(block),
+      duration,
+    });
+  }
+
+  const legacyRegex =
     /<core-tile[^>]+data-recipe-id="(r\d+|[A-Z0-9]+)"[\s\S]*?<p class="core-tile__description-text">([\s\S]*?)<\/p>[\s\S]*?(?:<p class="core-tile__description-subline">([\s\S]*?)<\/p>)?[\s\S]*?<\/core-tile>/g;
-  for (const match of html.matchAll(tileRegex)) {
+  for (const match of html.matchAll(legacyRegex)) {
+    const block = match[0];
     const id = match[1];
     const title = decodeHtml(match[2].trim());
     const duration = match[3] ? decodeHtml(match[3].trim()) : null;
-    const imgMatch = html
-      .slice(match.index ?? 0, (match.index ?? 0) + match[0].length)
-      .match(/data-src="([^"]+)"/);
-    tiles.push({ id, title, image: imgMatch?.[1] ?? null, duration });
+    pushTile(id, title, block, duration);
   }
+
+  const customerRegex =
+    /<core-tile[^>]*\bid="cr-(01[A-Za-z0-9]{24})"[^>]*>[\s\S]*?<p class="core-tile__description-text">([\s\S]*?)<\/p>[\s\S]*?(?:<p class="core-tile__description-subline">([\s\S]*?)<\/p>)?[\s\S]*?<\/core-tile>/g;
+  for (const match of html.matchAll(customerRegex)) {
+    const block = match[0];
+    const id = match[1];
+    const title = decodeHtml(match[2].trim());
+    const duration = match[3] ? decodeHtml(match[3].trim()) : null;
+    pushTile(id, title, block, duration);
+  }
+
   return tiles;
 }
 
@@ -246,9 +281,35 @@ function buildIngredientsPayload(
  *     et `getAnnotation(){return{type:"MODE",name:...,data:{speed,direction,temperature,
  *     time,pulseCount,pulseCountMax,accessory,power}}}`
  *   - Le champ `name` du MODE est un identifiant de mode prédéfini (BLEND, DOUGH, TURBO,
- *     STEAM, COOK, KNEAD…). Optionnel : si on ne le fournit pas, l'app affichera juste
- *     les paramètres bruts.
+ *     STEAM, COOK, KNEAD…). L’API (validation AJV) exige aussi `position` sur l’annotation.
  */
+function stepHasThermomixSettings(s: {
+  time?: number;
+  temperature?: number | "Varoma" | "Ebullition";
+  speed?: number | "Mijotage" | "Petrir";
+  direction?: "normal" | "reverse";
+  accessory?: string;
+}): boolean {
+  if (s.time !== undefined && s.time !== null) return true;
+  if (s.temperature !== undefined && s.temperature !== null) return true;
+  if (s.speed !== undefined && s.speed !== null) return true;
+  if (s.direction !== undefined && s.direction !== null) return true;
+  if (s.accessory !== undefined && s.accessory !== null && String(s.accessory).trim() !== "")
+    return true;
+  return false;
+}
+
+function inferThermomixModeName(s: {
+  temperature?: number | "Varoma" | "Ebullition";
+  speed?: number | "Mijotage" | "Petrir";
+}): string {
+  if (s.speed === "Petrir") return "KNEAD";
+  if (s.speed === "Mijotage") return "COOK";
+  if (s.temperature === "Varoma" || s.temperature === "Ebullition") return "STEAM";
+  if (typeof s.speed === "number" && s.speed >= 8) return "TURBO";
+  return "COOK";
+}
+
 function buildInstructionsPayload(
   steps: Array<{
     text: string;
@@ -263,24 +324,24 @@ function buildInstructionsPayload(
   text: string;
   annotations?: Array<{
     type: "MODE";
+    name: string;
+    position: { offset: number; length: number };
     data: Record<string, unknown>;
   }>;
 }> {
   return steps.map((s) => {
-    const hasSettings =
-      s.time !== undefined ||
-      s.temperature !== undefined ||
-      s.speed !== undefined ||
-      s.direction !== undefined ||
-      s.accessory !== undefined;
+    const hasSettings = stepHasThermomixSettings(s);
     const step: ReturnType<typeof buildInstructionsPayload>[number] = {
       type: "STEP",
       text: s.text,
     };
     if (hasSettings) {
+      const textLen = s.text.length;
       step.annotations = [
         {
           type: "MODE",
+          name: inferThermomixModeName(s),
+          position: { offset: 0, length: textLen },
           data: {
             time: s.time ?? null,
             temperature: s.temperature ?? null,
