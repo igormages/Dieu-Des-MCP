@@ -1159,10 +1159,14 @@ export function registerCookidooTools(server: McpServer): void {
           `Cookidoo : signature absente de la réponse. Réponse : ${JSON.stringify(sigRes)}`
         );
 
-      // Étape 2 : upload vers Cloudinary EU (cloud vorwerk-users-gc)
+      // Étape 2 : upload vers Cloudinary EU (cloud vorwerk-users-gc).
+      // Les mêmes champs que pour la signature doivent être envoyés : sinon la chaîne à signer côté Cloudinary ne matche pas (401).
       const formData = new FormData();
       formData.append("file", new Blob([imageBytes.buffer as ArrayBuffer], { type: finalMime }));
       formData.append("api_key", "993585863591145");
+      // `format` est requis dans le JSON Cookidoo /image/signature ; l’upload Cloudinary doit envoyer
+      // `source` + `timestamp` + `upload_preset` (pas `format`), sinon la signature ne correspond pas (401).
+      formData.append("source", "uw");
       formData.append("upload_preset", "prod-customer-recipe-signed");
       formData.append("signature", sigRes.signature);
       formData.append("timestamp", String(timestamp));

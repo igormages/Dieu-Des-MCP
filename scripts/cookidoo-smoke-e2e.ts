@@ -94,6 +94,54 @@ async function main(): Promise<void> {
     difficulty: "easy",
   });
 
+  console.log("3b) Upload image (signature Cookidoo + Cloudinary + PATCH recette)…");
+  const imgDl = await fetch("https://dummyimage.com/80x80/2a2a2a/ffffff.png");
+  if (!imgDl.ok) {
+    console.error("   Téléchargement image test :", imgDl.status);
+    process.exit(1);
+  }
+  const pngBytes = new Uint8Array(await imgDl.arrayBuffer());
+  const ts = Math.floor(Date.now() / 1000);
+  const preset = "prod-customer-recipe-signed";
+  const sigRes = await cookidooRequest<{ signature?: string }>(
+    "POST",
+    `/created-recipes/${COOKIDOO.language}/image/signature`,
+    { source: "uw", format: "PNG", timestamp: ts, upload_preset: preset }
+  );
+  if (!sigRes.signature) {
+    console.error("   Pas de signature :", sigRes);
+    process.exit(1);
+  }
+  const fd = new FormData();
+  fd.append("file", new Blob([pngBytes.buffer as ArrayBuffer], { type: "image/png" }));
+  fd.append("api_key", "993585863591145");
+  fd.append("source", "uw");
+  fd.append("upload_preset", preset);
+  fd.append("signature", sigRes.signature);
+  fd.append("timestamp", String(ts));
+  const up = await fetch("https://api-eu.cloudinary.com/v1_1/vorwerk-users-gc/image/upload", {
+    method: "POST",
+    body: fd,
+  });
+  const upJson = (await up.json().catch(() => ({}))) as {
+    public_id?: string;
+    format?: string;
+    error?: { message?: string };
+  };
+  if (!up.ok) {
+    console.error("   Cloudinary :", up.status, JSON.stringify(upJson));
+    process.exit(1);
+  }
+  if (!upJson.public_id || !upJson.format) {
+    console.error("   Réponse inattendue :", upJson);
+    process.exit(1);
+  }
+  await cookidooRequest("PATCH", base, {
+    image: `${upJson.public_id}.${upJson.format}`,
+    isImageOwnedByUser: false,
+  });
+  console.log("   Image OK :", `${upJson.public_id}.${upJson.format}`);
+
   console.log("4) Liste « Mes créations » (HTML)…");
   const html = await cookidooGetHtml(`/created-recipes/${COOKIDOO.language}`);
   const tiles = extractAllRecipeTiles(html);
