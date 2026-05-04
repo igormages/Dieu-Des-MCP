@@ -8,6 +8,8 @@ import {
   cookidooLogout,
   cookidooRequest,
 } from "./client";
+import { buildIngredientsPayload, buildInstructionsPayload } from "./customer-recipe-payloads";
+import { decodeHtml, extractAllRecipeTiles } from "./parsing";
 
 const ALGOLIA_APP_ID = "3TA8NT85XJ";
 const ALGOLIA_HOST = `${ALGOLIA_APP_ID.toLowerCase()}-dsn.algolia.net`;
@@ -89,63 +91,6 @@ function extractMeta(html: string, property: string): string | null {
   return m?.[1] ?? null;
 }
 
-function extractTileImageFromBlock(blockHtml: string): string | null {
-  return (
-    blockHtml.match(/data-src="([^"]+)"/)?.[1] ??
-    blockHtml.match(/<img[^>]+src="([^"]+)"/)?.[1] ??
-    null
-  );
-}
-
-/**
- * Extrait les tuiles liste type « Mes créations » / favoris.
- * Sur `/created-recipes/{lang}`, Cookidoo utilise `id="cr-{ULID}"` sans `data-recipe-id`
- * (les recettes officielles gardent `data-recipe-id="r…"`).
- */
-function extractAllRecipeTiles(html: string): Array<{
-  id: string;
-  title: string;
-  image: string | null;
-  duration: string | null;
-}> {
-  type Tile = { id: string; title: string; image: string | null; duration: string | null };
-  const tiles: Tile[] = [];
-  const seen = new Set<string>();
-
-  function pushTile(id: string, title: string, block: string, duration: string | null) {
-    if (seen.has(id)) return;
-    seen.add(id);
-    tiles.push({
-      id,
-      title,
-      image: extractTileImageFromBlock(block),
-      duration,
-    });
-  }
-
-  const legacyRegex =
-    /<core-tile[^>]+data-recipe-id="(r\d+|[A-Z0-9]+)"[\s\S]*?<p class="core-tile__description-text">([\s\S]*?)<\/p>[\s\S]*?(?:<p class="core-tile__description-subline">([\s\S]*?)<\/p>)?[\s\S]*?<\/core-tile>/g;
-  for (const match of html.matchAll(legacyRegex)) {
-    const block = match[0];
-    const id = match[1];
-    const title = decodeHtml(match[2].trim());
-    const duration = match[3] ? decodeHtml(match[3].trim()) : null;
-    pushTile(id, title, block, duration);
-  }
-
-  const customerRegex =
-    /<core-tile[^>]*\bid="cr-(01[A-Za-z0-9]{24})"[^>]*>[\s\S]*?<p class="core-tile__description-text">([\s\S]*?)<\/p>[\s\S]*?(?:<p class="core-tile__description-subline">([\s\S]*?)<\/p>)?[\s\S]*?<\/core-tile>/g;
-  for (const match of html.matchAll(customerRegex)) {
-    const block = match[0];
-    const id = match[1];
-    const title = decodeHtml(match[2].trim());
-    const duration = match[3] ? decodeHtml(match[3].trim()) : null;
-    pushTile(id, title, block, duration);
-  }
-
-  return tiles;
-}
-
 function extractCustomLists(html: string): Array<{ id: string; name: string }> {
   const lists: Array<{ id: string; name: string }> = [];
   const regex =
@@ -159,18 +104,6 @@ function extractCustomLists(html: string): Array<{ id: string; name: string }> {
 function extractCsrfToken(html: string): string | null {
   const m = html.match(/name="_csrf"\s+value="([^"]+)"/);
   return m?.[1] ?? null;
-}
-
-function decodeHtml(s: string): string {
-  return s
-    .replace(/&#39;/g, "'")
-    .replace(/&#34;/g, '"')
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#xA0;/g, " ")
-    .replace(/&nbsp;/g, " ");
 }
 
 function extractJsonLd(html: string): Record<string, unknown>[] {
@@ -224,139 +157,6 @@ interface MyDayResponse {
       landscapeImage?: string;
     }>;
   };
-}
-
-/* ------------------------------------------------------------------ */
-/* Helpers payload Cookidoo                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * Convertit nos groupes d'ingrédients structurés vers le body PATCH `ingredients`.
- *
- * Vérifié par smoke test sur l’API réelle (mai 2026) : le `oneOf` ne reconnaît
- * **que** `{ type: "INGREDIENT", text: string }` pour chaque entrée du tableau.
- * Les valeurs `TITLE`, `TEXT`, `MEASURED`, `measured`, `title`, etc. renvoient
- * `400 validationError` sur `body/ingredients/N/type`.
- *
- * Les **titres de groupe** (`ingredientGroups[].name`) sont donc ajoutés comme
- * une ligne `INGREDIENT` dont le texte est uniquement le titre (sans quantité).
- * Les quantités / unités restent dans la chaîne `text` des lignes suivantes,
- * comme en mode non structuré sur le site Cookidoo.
- */
-function buildIngredientsPayload(
-  groups: Array<{
-    name?: string;
-    ingredients: Array<{
-      name: string;
-      quantity?: number;
-      unit?: string;
-      preparation?: string;
-      optional?: boolean;
-    }>;
-  }>
-): Array<{ type: "INGREDIENT"; text: string }> {
-  const items: Array<{ type: "INGREDIENT"; text: string }> = [];
-  for (const g of groups) {
-    if (g.name?.trim()) items.push({ type: "INGREDIENT", text: g.name.trim() });
-    for (const i of g.ingredients) {
-      const parts: string[] = [];
-      if (i.quantity !== undefined) parts.push(String(i.quantity));
-      if (i.unit) parts.push(i.unit);
-      parts.push(i.name);
-      if (i.preparation) parts.push(`(${i.preparation})`);
-      if (i.optional) parts.push("(facultatif)");
-      items.push({ type: "INGREDIENT", text: parts.join(" ") });
-    }
-  }
-  return items;
-}
-
-/**
- * Convertit nos étapes structurées (avec time/temperature/speed/direction/accessory
- * en champs séparés) vers le format flat attendu par PATCH /created-recipes/{lang}/{id}.
- *
- * Format confirmé par lecture du bundle JS de Cookidoo (pl-customer-recipes.js) :
- *   - Type d'étape : "STEP" (MAJUSCULES) — voir `s={type:"STEP",text:...}`
- *   - Annotations Thermomix : type "MODE" (MAJUSCULES) — voir `getType(){return"MODE"}`
- *     et `getAnnotation(){return{type:"MODE",name:...,data:{speed,direction,temperature,
- *     time,pulseCount,pulseCountMax,accessory,power}}}`
- *   - Le champ `name` du MODE est un identifiant de mode prédéfini (BLEND, DOUGH, TURBO,
- *     STEAM, COOK, KNEAD…). L’API (validation AJV) exige aussi `position` sur l’annotation.
- */
-function stepHasThermomixSettings(s: {
-  time?: number;
-  temperature?: number | "Varoma" | "Ebullition";
-  speed?: number | "Mijotage" | "Petrir";
-  direction?: "normal" | "reverse";
-  accessory?: string;
-}): boolean {
-  if (s.time !== undefined && s.time !== null) return true;
-  if (s.temperature !== undefined && s.temperature !== null) return true;
-  if (s.speed !== undefined && s.speed !== null) return true;
-  if (s.direction !== undefined && s.direction !== null) return true;
-  if (s.accessory !== undefined && s.accessory !== null && String(s.accessory).trim() !== "")
-    return true;
-  return false;
-}
-
-function inferThermomixModeName(s: {
-  temperature?: number | "Varoma" | "Ebullition";
-  speed?: number | "Mijotage" | "Petrir";
-}): string {
-  if (s.speed === "Petrir") return "KNEAD";
-  if (s.speed === "Mijotage") return "COOK";
-  if (s.temperature === "Varoma" || s.temperature === "Ebullition") return "STEAM";
-  if (typeof s.speed === "number" && s.speed >= 8) return "TURBO";
-  return "COOK";
-}
-
-function buildInstructionsPayload(
-  steps: Array<{
-    text: string;
-    time?: number;
-    temperature?: number | "Varoma" | "Ebullition";
-    speed?: number | "Mijotage" | "Petrir";
-    direction?: "normal" | "reverse";
-    accessory?: string;
-  }>
-): Array<{
-  type: "STEP";
-  text: string;
-  annotations?: Array<{
-    type: "MODE";
-    name: string;
-    position: { offset: number; length: number };
-    data: Record<string, unknown>;
-  }>;
-}> {
-  return steps.map((s) => {
-    const hasSettings = stepHasThermomixSettings(s);
-    const step: ReturnType<typeof buildInstructionsPayload>[number] = {
-      type: "STEP",
-      text: s.text,
-    };
-    if (hasSettings) {
-      const textLen = s.text.length;
-      step.annotations = [
-        {
-          type: "MODE",
-          name: inferThermomixModeName(s),
-          position: { offset: 0, length: textLen },
-          data: {
-            time: s.time ?? null,
-            temperature: s.temperature ?? null,
-            speed: s.speed ?? null,
-            direction: s.direction ?? null,
-            accessory: s.accessory ?? null,
-            pulseCount: null,
-            pulseCountMax: null,
-            power: null,
-          },
-        },
-      ];
-    }
-    return step;
-  });
 }
 
 /* ------------------------------------------------------------------ */
