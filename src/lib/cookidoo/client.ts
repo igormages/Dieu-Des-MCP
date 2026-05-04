@@ -181,12 +181,18 @@ async function clearSession(): Promise<void> {
 
 async function getCredentials(): Promise<{ username: string; password: string }> {
   const keys = await getServiceKeys("cookidoo");
-  if (!keys?.username || !keys?.password) {
+  const username =
+    (typeof keys?.username === "string" && keys.username.trim()) ||
+    process.env.COOKIDOO_USERNAME?.trim();
+  const password =
+    (typeof keys?.password === "string" && keys.password.trim()) ||
+    process.env.COOKIDOO_PASSWORD?.trim();
+  if (!username || !password) {
     throw new Error(
-      "Identifiants Cookidoo non configurés. Rendez-vous sur /settings pour les ajouter."
+      "Identifiants Cookidoo non configurés. Enregistrez-les sur /settings (clés stockées dans Redis) ou définissez COOKIDOO_USERNAME et COOKIDOO_PASSWORD (ex. dans .env pour les scripts CLI)."
     );
   }
-  return { username: keys.username, password: keys.password };
+  return { username, password };
 }
 
 /**

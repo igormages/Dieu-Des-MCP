@@ -2,21 +2,28 @@
  * Smoke E2E Cookidoo : même session Redis que le serveur MCP (Upstash / env du projet).
  *
  * Usage :
- *   COOKIDOO_E2E=1 pnpm exec tsx scripts/cookidoo-smoke-e2e.ts
+ *   COOKIDOO_E2E=1 pnpm run cookidoo:smoke-e2e
+ *
+ * Les imports du client sont chargés **après** `dotenv` : sans `.env`, KV_REST_* est absent
+ * et les identifiants Upstash ne sont pas lus (comportement différent de `next dev`).
  *
  * Optionnel : COOKIDOO_E2E_DELETE=1 supprime la recette de test à la fin.
  *
- * Même prérequis que le serveur MCP : identifiants Cookidoo enregistrés (ex. /settings)
- * + Redis/Upstash si la session y est stockée.
+ * Prérequis : identifiants Cookidoo dans Redis (/settings) ou COOKIDOO_USERNAME / COOKIDOO_PASSWORD.
  */
-import {
-  COOKIDOO,
-  cookidooForceRelogin,
-  cookidooRequest,
-  cookidooGetHtml,
-} from "../src/lib/cookidoo/client";
-import { buildIngredientsPayload, buildInstructionsPayload } from "../src/lib/cookidoo/customer-recipe-payloads";
-import { extractAllRecipeTiles } from "../src/lib/cookidoo/parsing";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(__dirname, "..");
+if (fs.existsSync(path.join(root, ".env"))) {
+  loadEnv({ path: path.join(root, ".env") });
+}
+if (fs.existsSync(path.join(root, ".env.local"))) {
+  loadEnv({ path: path.join(root, ".env.local"), override: true });
+}
 
 async function main(): Promise<void> {
   if (process.env.COOKIDOO_E2E !== "1") {
@@ -25,6 +32,15 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+
+  const [{ COOKIDOO, cookidooForceRelogin, cookidooRequest, cookidooGetHtml }, payload, parsing] =
+    await Promise.all([
+      import("../src/lib/cookidoo/client"),
+      import("../src/lib/cookidoo/customer-recipe-payloads"),
+      import("../src/lib/cookidoo/parsing"),
+    ]);
+  const { buildIngredientsPayload, buildInstructionsPayload } = payload;
+  const { extractAllRecipeTiles } = parsing;
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   const title = `MCP E2E ${stamp}`;
