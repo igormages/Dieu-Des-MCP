@@ -564,28 +564,38 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_add_custom_ingredient",
-    "Ajoute un ingrédient personnalisé (texte libre) à la liste de courses Cookidoo.",
+    "Ajoute un ingrédient personnalisé (texte libre) à la liste de courses Cookidoo. Côté Cookidoo, c'est un champ texte unique : la quantité et l'unité font partie du texte (ex: '300g de saumon').",
     {
-      name: z.string().describe("Nom de l'ingrédient (ex: 'sel')."),
-      quantity: z.number().optional().describe("Quantité (ex: 200)."),
-      unit: z.string().optional().describe("Unité (ex: 'g', 'ml', 'pièce(s)')."),
+      itemValue: z
+        .string()
+        .describe(
+          "Texte libre de l'item (ex: '300g de saumon', '2 oignons', 'sel'). Inclure quantité et unité directement dans le texte."
+        ),
     },
-    async ({ name, quantity, unit }) => {
-      const payload: Record<string, unknown> = {
-        ingredientNotation: name,
-      };
-      if (quantity !== undefined) payload.quantity = { value: quantity };
-      if (unit) payload.unitNotation = unit;
-      const res = await cookidooRequest<{ id?: string; message?: string }>(
+    async ({ itemValue }) => {
+      // HAR confirmé : POST /shopping/<language>/additional-item (singulier !) body { "itemValue": "..." }
+      const res = await cookidooRequest<{
+        id?: string;
+        message?: string;
+        data?: { id?: string; itemValue?: string };
+      }>(
         "POST",
-        `/shopping/${COOKIDOO.market}/additional-items`,
-        payload
+        `/shopping/${COOKIDOO.language}/additional-item`,
+        { itemValue }
       );
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ added: { name, quantity, unit }, response: res }, null, 2),
+            text: JSON.stringify(
+              {
+                added: itemValue,
+                id: res.id ?? res.data?.id,
+                response: res,
+              },
+              null,
+              2
+            ),
           },
         ],
       };
@@ -593,23 +603,97 @@ export function registerCookidooTools(server: McpServer): void {
   );
 
   server.tool(
-    "cookidoo_mark_ingredient_owned",
-    "Marque un ingrédient comme possédé (case cochée dans la liste de courses).",
+    "cookidoo_update_custom_ingredient",
+    "Modifie un ingrédient personnalisé existant (renomme et/ou change son statut 'possédé'). Si onlyOwnership=true, utilise l'endpoint /ownership/edit (toggle léger) ; sinon /edit (rename complet).",
     {
-      ingredientId: z
+      itemId: z
         .string()
-        .describe("ID de l'ingrédient (ex: '01KQM14SA08Z3724B2WCXM84ZE')."),
+        .describe("ID de l'item personnel à modifier (ex: '01KQM11SH02X8VV9Z02GJKP5NV')."),
+      name: z.string().describe("Nouveau texte de l'item (ex: '350g de saumon')."),
+      isOwned: z
+        .boolean()
+        .describe("True = case cochée (acquis), false = à acheter."),
+      onlyOwnership: z
+        .boolean()
+        .optional()
+        .describe(
+          "Si true, utilise l'endpoint /ownership/edit (toggle uniquement). Défaut false = renomme + statut."
+        ),
     },
-    async ({ ingredientId }) => {
+    async ({ itemId, name, isOwned, onlyOwnership }) => {
+      // HAR confirmé :
+      //   PUT /shopping/<market>/additional-item/{id}/edit
+      //     body { "_method":"put","isOwned":"false","name":"350g de saumon" }
+      //   PUT /shopping/<market>/additional-item/{id}/ownership/edit
+      //     body { "_method":"put","isOwned":"true|false","name":"350g de saumon" }
+      // Côté Cookidoo, isOwned est sérialisé en STRING ("true"/"false"), pas en booléen JSON.
+      const path = onlyOwnership
+        ? `/shopping/${COOKIDOO.market}/additional-item/${itemId}/ownership/edit`
+        : `/shopping/${COOKIDOO.market}/additional-item/${itemId}/edit`;
+      await cookidooRequest("PUT", path, {
+        _method: "put",
+        isOwned: String(isOwned),
+        name,
+      });
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Item ${itemId} mis à jour (${onlyOwnership ? "ownership" : "edit"}) : ${name}, owned=${isOwned}.`,
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "cookidoo_delete_custom_ingredient",
+    "Supprime définitivement un ingrédient personnalisé de la liste de courses.",
+    {
+      itemId: z.string().describe("ID de l'item personnel à supprimer."),
+    },
+    async ({ itemId }) => {
+      // HAR confirmé : DELETE /shopping/<market>/additional-item/{id}
+      //   body { "_method":"delete","isOwned":"","name":"" }
       await cookidooRequest(
-        "POST",
-        `/shopping/${COOKIDOO.market}/owned-ingredients`,
-        { ingredientIds: [ingredientId] },
-        { json: false }
+        "DELETE",
+        `/shopping/${COOKIDOO.market}/additional-item/${itemId}`,
+        { _method: "delete", isOwned: "", name: "" }
       );
       return {
         content: [
-          { type: "text" as const, text: `Ingrédient ${ingredientId} marqué comme possédé.` },
+          {
+            type: "text" as const,
+            text: `Item personnel ${itemId} supprimé de la liste de courses.`,
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "cookidoo_mark_ingredients_owned",
+    "Marque un ou plusieurs ingrédients (issus de recettes ajoutées à la liste) comme possédés. Accepte un tableau d'IDs pour traiter plusieurs items en une seule requête.",
+    {
+      ingredientIds: z
+        .array(z.string())
+        .min(1)
+        .describe("IDs des ingrédients à cocher (ex: ['01KQM14SA08Z3724B2WCXM84ZE'])."),
+    },
+    async ({ ingredientIds }) => {
+      // HAR confirmé : POST /shopping/<market>/owned-ingredients body { "ingredientIDS": [...] }
+      // Note : le champ est en MAJUSCULES côté Cookidoo (anti-pattern, mais c'est leur convention).
+      await cookidooRequest(
+        "POST",
+        `/shopping/${COOKIDOO.market}/owned-ingredients`,
+        { ingredientIDS: ingredientIds }
+      );
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${ingredientIds.length} ingrédient(s) marqué(s) comme possédé(s).`,
+          },
         ],
       };
     }
@@ -617,7 +701,7 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_unmark_ingredient_owned",
-    "Décoche un ingrédient (le retire de la liste des possédés).",
+    "Décoche un ingrédient de recette (le retire de la liste des possédés). NOTE : pour les items personnels (additional-item), utiliser plutôt cookidoo_update_custom_ingredient avec isOwned=false + onlyOwnership=true.",
     {
       ingredientId: z.string().describe("ID de l'ingrédient à décocher."),
     },
@@ -625,8 +709,7 @@ export function registerCookidooTools(server: McpServer): void {
       await cookidooRequest(
         "DELETE",
         `/shopping/${COOKIDOO.market}/owned-ingredients/${ingredientId}`,
-        { _method: "delete" },
-        { json: false }
+        { _method: "delete" }
       );
       return {
         content: [
@@ -1066,11 +1149,18 @@ export function registerCookidooTools(server: McpServer): void {
       recipeId: z.string().describe("ULID de la recette personnelle à supprimer."),
     },
     async ({ recipeId }) => {
+      // HAR confirmé (formulaire détail recette dans modification d'une recette.har) :
+      //   <form action="/created-recipes/fr/{id}">
+      //     <input type="hidden" name="_method" value="delete">
+      // → DELETE /created-recipes/<language>/{id} body { "_method":"delete" }
+      // Le path historique /api/recipes/{id} n'existe pas côté Cookidoo.
       await cookidooRequest(
         "DELETE",
-        `/created-recipes/${COOKIDOO.language}/api/recipes/${recipeId}`,
+        `/created-recipes/${COOKIDOO.language}/${recipeId}`,
         { _method: "delete" },
-        { json: false }
+        {
+          referer: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}/${recipeId}`,
+        }
       );
       return {
         content: [
