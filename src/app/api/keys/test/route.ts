@@ -189,6 +189,15 @@ async function testFeedly(keys: Keys) {
 }
 
 // ── ElevenLabs ─────────────────────────────────────────────────────────────
+async function testCoditVentePres(keys: Keys) {
+  const src = keys.presentationSource?.trim();
+  if (!src) {
+    throw new Error(
+      "Indique une URL vers presentation.json ou le chemin du dossier commercial/ (ou CODIT_VENTEPRES_PRESENTATION_SOURCE sur le déploiement)."
+    );
+  }
+}
+
 async function testPennylaneCodit(keys: Keys) {
   const res = await fetch("https://app.pennylane.com/api/external/v2/me", {
     headers: {
@@ -233,6 +242,7 @@ const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
   feedly: testFeedly,
   elevenlabs: testElevenLabs,
   pennylaneCodit: testPennylaneCodit,
+  coditVentePres: testCoditVentePres,
 };
 
 export async function POST(request: Request) {

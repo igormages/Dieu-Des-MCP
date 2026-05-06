@@ -296,6 +296,25 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Cloner une voix", available: false },
     ],
   },
+  coditVentePres: {
+    url: "https://pennylane.readme.io/docs/create-a-customer-invoice-use-case",
+    urlLabel: "Doc Pennylane — factures (pour enchaîner après les lignes Codit)",
+    steps: [
+      {
+        text:
+          "Expose presentation.json : soit une URL HTTPS publique (Raw GitHub, artefact…), soit sur ce serveur le chemin absolu du dossier commercial/ du repo CoditVentePres-2.",
+      },
+      {
+        text:
+          "Paires avec Pennylane (COD’IT) : cet MCP liste les devis et calcule les trois acomptes 30 % ; Claude appelle ensuite pennylane_codit_create_customer_invoice en brouillon avec les line_items retournés.",
+      },
+    ],
+    capabilities: [
+      { label: "Lister / détail devis (presentation.json)", available: true },
+      { label: "Montants facturation 30 % signature / 1re maquette / livraison", available: true },
+      { label: "Paquet de lignes Pennylane pour une tranche sur tous les devis", available: true },
+    ],
+  },
   pennylaneCodit: {
     url: "https://pennylane.readme.io/docs/authentication-overview",
     urlLabel: "Documentation API Pennylane",

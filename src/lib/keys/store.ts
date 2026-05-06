@@ -228,6 +228,17 @@ export const SERVICE_DEFINITIONS: Record<
     fields: [],
     noKeysRequired: true,
   },
+  coditVentePres: {
+    label: "CoditVentePres (COD'IT)",
+    fields: [
+      {
+        key: "presentationSource",
+        label: "URL ou dossier presentation.json",
+        placeholder:
+          "https://…/presentation.json ou chemin absolu …/CoditVentePres-2/commercial",
+      },
+    ],
+  },
   pennylaneCodit: {
     label: "Pennylane (COD'IT)",
     fields: [
@@ -343,6 +354,10 @@ function getFromEnv(service: string): ServiceConfig | null {
     case "elevenlabs": {
       const apiKey = process.env.ELEVENLABS_API_KEY;
       return apiKey ? { apiKey } : null;
+    }
+    case "coditVentePres": {
+      const presentationSource = process.env.CODIT_VENTEPRES_PRESENTATION_SOURCE?.trim();
+      return presentationSource ? { presentationSource } : null;
     }
     case "pennylaneCodit": {
       const apiKey = process.env.PENNYLANE_CODIT_API_KEY ?? process.env.PENNYLANE_API_KEY;
