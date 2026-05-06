@@ -189,6 +189,20 @@ async function testFeedly(keys: Keys) {
 }
 
 // ── ElevenLabs ─────────────────────────────────────────────────────────────
+async function testPennylaneCodit(keys: Keys) {
+  const res = await fetch("https://app.pennylane.com/api/external/v2/me", {
+    headers: {
+      Authorization: `Bearer ${keys.apiKey}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = (err as { message?: string; error?: string }).message ?? (err as { error?: string }).error;
+    throw new Error(msg ?? `Jeton Pennylane invalide (${res.status})`);
+  }
+}
+
 async function testElevenLabs(keys: Keys) {
   const res = await fetch("https://api.elevenlabs.io/v1/user", {
     headers: { "xi-api-key": keys.apiKey },
@@ -218,6 +232,7 @@ const TESTERS: Record<string, (keys: Keys) => Promise<void>> = {
   qonto: testQonto,
   feedly: testFeedly,
   elevenlabs: testElevenLabs,
+  pennylaneCodit: testPennylaneCodit,
 };
 
 export async function POST(request: Request) {

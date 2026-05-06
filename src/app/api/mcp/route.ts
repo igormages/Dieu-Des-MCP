@@ -16,6 +16,7 @@ import { registerFeedlyTools } from "@/lib/feedly/tools";
 import { registerElevenLabsTools } from "@/lib/elevenlabs/tools";
 import { registerClubigenTools } from "@/lib/clubigen/tools";
 import { registerCookidooTools } from "@/lib/cookidoo/tools";
+import { registerPennylaneCoditTools } from "@/lib/pennylane-codit/tools";
 import { verifyBearerToken } from "@/lib/auth/verify";
 
 const handler = createMcpHandler(
@@ -37,6 +38,7 @@ const handler = createMcpHandler(
     registerElevenLabsTools(server);
     registerClubigenTools(server);
     registerCookidooTools(server);
+    registerPennylaneCoditTools(server);
   },
   {
     capabilities: {

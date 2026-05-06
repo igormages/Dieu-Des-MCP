@@ -228,6 +228,16 @@ export const SERVICE_DEFINITIONS: Record<
     fields: [],
     noKeysRequired: true,
   },
+  pennylaneCodit: {
+    label: "Pennylane (COD'IT)",
+    fields: [
+      {
+        key: "apiKey",
+        label: "Token API Pennylane (Bearer)",
+        placeholder: "votre token entreprise Pennylane",
+      },
+    ],
+  },
   cookidoo: {
     label: "Cookidoo (Thermomix)",
     fields: [
@@ -333,6 +343,13 @@ function getFromEnv(service: string): ServiceConfig | null {
     case "elevenlabs": {
       const apiKey = process.env.ELEVENLABS_API_KEY;
       return apiKey ? { apiKey } : null;
+    }
+    case "pennylaneCodit": {
+      const apiKey = process.env.PENNYLANE_CODIT_API_KEY ?? process.env.PENNYLANE_API_KEY;
+      const baseUrl = process.env.PENNYLANE_CODIT_BASE_URL;
+      return apiKey
+        ? { apiKey, ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}) }
+        : null;
     }
     case "cookidoo": {
       const username = process.env.COOKIDOO_USERNAME;

@@ -296,6 +296,29 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Cloner une voix", available: false },
     ],
   },
+  pennylaneCodit: {
+    url: "https://pennylane.readme.io/docs/authentication-overview",
+    urlLabel: "Documentation API Pennylane",
+    steps: [
+      {
+        text:
+          "Connecteur nommé « COD'IT » pour le distinguer d’éventuels autres comptes Pennylane : même API Pennylane, clé dédiée FactoFrance si besoin.",
+      },
+      {
+        text:
+          "Crée un jeton d’API (ou OAuth entreprise) avec les scopes factures / devis selon la doc Pennylane.",
+      },
+      {
+        text:
+          "Copie le Bearer dans apiKey. Option avancée : PENNYLANE_CODIT_BASE_URL sur le déploiement si ton instance n’utilise pas /api/external/v1 par défaut.",
+      },
+    ],
+    capabilities: [
+      { label: "Créer / lire / finaliser / envoyer factures (file_url PDF)", available: true },
+      { label: "Créer devis (API v2 quotes)", available: true },
+      { label: "Avoirs + liaison à une facture (v2)", available: true },
+    ],
+  },
   clubigen: {
     url: "https://www.clubigen.fr",
     urlLabel: "Site Club iGen",
