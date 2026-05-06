@@ -315,7 +315,8 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
     ],
     capabilities: [
       { label: "Créer / lire / finaliser / envoyer factures (file_url PDF)", available: true },
-      { label: "Créer devis (API v2 quotes)", available: true },
+      { label: "Modifier facture brouillon (PUT/PATCH v1 ou v2, JSON doc Pennylane)", available: true },
+      { label: "Créer / modifier devis (API v2 quotes)", available: true },
       { label: "Avoirs + liaison à une facture (v2)", available: true },
     ],
   },
