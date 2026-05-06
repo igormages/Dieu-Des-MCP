@@ -100,6 +100,22 @@ export function pennylaneCoditV2QuotesRoot(baseUrl: string): string {
   return `${pennylaneCoditOriginFromBase(baseUrl)}/api/external/v2/quotes`;
 }
 
+/** URL d’une facture customer_invoices (v1 ou v2). */
+export function pennylaneCoditCustomerInvoiceUrl(
+  baseUrl: string,
+  invoiceId: string | number,
+  apiVersion: "1" | "2" = "2"
+): string {
+  const origin = pennylaneCoditOriginFromBase(baseUrl);
+  return `${origin}/api/external/v${apiVersion}/customer_invoices/${encodeURIComponent(String(invoiceId))}`;
+}
+
+/** URL d’un devis v2. */
+export function pennylaneCoditQuoteByIdUrl(baseUrl: string, quoteId: string | number): string {
+  const origin = pennylaneCoditOriginFromBase(baseUrl);
+  return `${origin}/api/external/v2/quotes/${encodeURIComponent(String(quoteId))}`;
+}
+
 export async function pennylaneCoditDownloadPdfAsBase64(fileUrl: string): Promise<string> {
   const res = await fetch(fileUrl);
   if (!res.ok) {

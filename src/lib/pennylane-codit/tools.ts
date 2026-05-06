@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  pennylaneCoditCustomerInvoiceUrl,
   pennylaneCoditDownloadPdfAsBase64,
+  pennylaneCoditQuoteByIdUrl,
   pennylaneCoditRequestAbsolute,
   pennylaneCoditRequestBase,
   pennylaneCoditSendInvoiceByEmail,
@@ -31,7 +33,7 @@ export function registerPennylaneCoditTools(server: McpServer) {
     `Pennylane (COD'IT) : crée une facture client (POST customer_invoices).
 Compat FactoFrance (API v1) : enveloppe invoice + customer.source_id + line_items (HT).
 Ou API v2 plate : passer customer_id (nombre) et lignes converties en invoice_lines (prix HT unitaire en string).
-Ou invoice_json pour envoyer le JSON Pennylane tel quel.`,
+Ou invoice_json pour envoyer le JSON Pennylane tel quel. Pour modifier une facture ou un brouillon : pennylane_codit_update_customer_invoice.`,
     {
       invoice_json: z
         .string()
@@ -338,6 +340,76 @@ Ou invoice_json pour envoyer le JSON Pennylane tel quel.`,
       }
       const body = { credit_note_id: cnId };
       const res = await pennylaneCoditRequestAbsolute<unknown>("POST", url, body);
+      return textJson(res);
+    }
+  );
+
+  server.tool(
+    "pennylane_codit_update_customer_invoice",
+    `Pennylane (COD'IT) : modifie une facture ou un avoir (endpoint « Update customer invoice », doc Pennylane). Souvent réservé aux brouillons ; une facture finalisée peut être verrouillée — utiliser un avoir si besoin.`,
+    {
+      invoice_id: z.union([z.string(), z.number()]).describe("ID Pennylane de la facture à mettre à jour."),
+      invoice_update_json: z
+        .string()
+        .describe(
+          "Corps JSON Pennylane (date, deadline, invoice_lines, special_mention, draft, …). Voir référence « Update a customer invoice »."
+        ),
+      api_version: z
+        .enum(["v2", "v1"])
+        .optional()
+        .describe(
+          "v2 recommandé. v1 si ton instance n’expose pas encore la mise à jour sur v2 (même host, chemin /api/external/v1/...)."
+        ),
+      http_method: z
+        .enum(["PUT", "PATCH"])
+        .optional()
+        .describe(
+          "PUT par défaut. Si Pennylane renvoie 405, réessaie avec PATCH (selon ta version de doc / OpenAPI)."
+        ),
+    },
+    async ({ invoice_id, invoice_update_json, api_version, http_method }) => {
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(invoice_update_json) as Record<string, unknown>;
+      } catch {
+        throw new Error("invoice_update_json invalide.");
+      }
+      body.use_2026_api_changes = body.use_2026_api_changes ?? true;
+
+      const { baseUrl } = await requirePennylaneCoditConfig();
+      const ver = api_version === "v1" ? "1" : "2";
+      const url = pennylaneCoditCustomerInvoiceUrl(baseUrl, invoice_id, ver);
+      const method = http_method ?? "PUT";
+      const res = await pennylaneCoditRequestAbsolute<unknown>(method, url, body);
+      return textJson(res);
+    }
+  );
+
+  server.tool(
+    "pennylane_codit_update_quote",
+    `Pennylane (COD'IT) : modifie un devis (PUT/PATCH « Update a quote » API v2, doc Pennylane).`,
+    {
+      quote_id: z.union([z.string(), z.number()]),
+      quote_update_json: z
+        .string()
+        .describe(
+          "Corps JSON (date, deadline, customer_id, invoice_lines avec add/update/delete, …). Voir référence « Update a quote »."
+        ),
+      http_method: z.enum(["PUT", "PATCH"]).optional().describe("PUT par défaut ; PATCH si 405."),
+    },
+    async ({ quote_id, quote_update_json, http_method }) => {
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(quote_update_json) as Record<string, unknown>;
+      } catch {
+        throw new Error("quote_update_json invalide.");
+      }
+      body.use_2026_api_changes = body.use_2026_api_changes ?? true;
+
+      const { baseUrl } = await requirePennylaneCoditConfig();
+      const url = pennylaneCoditQuoteByIdUrl(baseUrl, quote_id);
+      const method = http_method ?? "PUT";
+      const res = await pennylaneCoditRequestAbsolute<unknown>(method, url, body);
       return textJson(res);
     }
   );
