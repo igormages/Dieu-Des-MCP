@@ -264,6 +264,46 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  leclercdrive: {
+    label: "Leclerc Drive",
+    fields: [
+      {
+        key: "username",
+        label: "Email du compte Leclerc",
+        placeholder: "votre.email@example.com",
+      },
+      {
+        key: "password",
+        label: "Mot de passe",
+        placeholder: "votre mot de passe",
+      },
+      {
+        key: "pointLivraison",
+        label: "N° point de livraison",
+        placeholder: "175601",
+      },
+      {
+        key: "storePath",
+        label: "Chemin magasin API",
+        placeholder: "magasin-175601-175601",
+      },
+      {
+        key: "storeSlug",
+        label: "Slug magasin (ville)",
+        placeholder: "Auray",
+      },
+      {
+        key: "coursesHost",
+        label: "Hôte courses (région)",
+        placeholder: "fd9-courses.leclercdrive.fr",
+      },
+      {
+        key: "secureHost",
+        label: "Hôte sécurisé",
+        placeholder: "fd9-secure.leclercdrive.fr",
+      },
+    ],
+  },
 };
 
 let redis: Redis | null = null;
@@ -370,6 +410,30 @@ function getFromEnv(service: string): ServiceConfig | null {
       const username = process.env.COOKIDOO_USERNAME;
       const password = process.env.COOKIDOO_PASSWORD;
       return username && password ? { username, password } : null;
+    }
+    case "leclercdrive": {
+      const username = process.env.LECLERCDRIVE_USERNAME;
+      const password = process.env.LECLERCDRIVE_PASSWORD;
+      if (!username || !password) return null;
+      return {
+        username,
+        password,
+        ...(process.env.LECLERCDRIVE_POINT_LIVRAISON
+          ? { pointLivraison: process.env.LECLERCDRIVE_POINT_LIVRAISON }
+          : {}),
+        ...(process.env.LECLERCDRIVE_STORE_PATH
+          ? { storePath: process.env.LECLERCDRIVE_STORE_PATH }
+          : {}),
+        ...(process.env.LECLERCDRIVE_STORE_SLUG
+          ? { storeSlug: process.env.LECLERCDRIVE_STORE_SLUG }
+          : {}),
+        ...(process.env.LECLERCDRIVE_COURSES_HOST
+          ? { coursesHost: process.env.LECLERCDRIVE_COURSES_HOST }
+          : {}),
+        ...(process.env.LECLERCDRIVE_SECURE_HOST
+          ? { secureHost: process.env.LECLERCDRIVE_SECURE_HOST }
+          : {}),
+      };
     }
     default:
       return null;
