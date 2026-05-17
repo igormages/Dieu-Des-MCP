@@ -286,8 +286,8 @@ export const SERVICE_DEFINITIONS: Record<
       },
       {
         key: "storeUrl",
-        label: "URL magasin (optionnel)",
-        placeholder: "https://fd9-courses.leclercdrive.fr/magasin-…-Auray.aspx",
+        label: "URL magasin après redirection (optionnel)",
+        placeholder: "URL fd9-courses… obtenue après connexion sur www.leclercdrive.fr",
         required: false,
       },
     ],

@@ -21,8 +21,10 @@ import {
   persistHarvestedSession,
 } from "../src/lib/leclercdrive/client";
 
-const DEFAULT_STORE_URL =
-  "https://fd9-courses.leclercdrive.fr/magasin-175601-175601-Auray.aspx";
+import { LECLERC_PORTAL_URL } from "../src/lib/leclercdrive/navigation";
+
+/** Toujours démarrer sur le portail national, jamais sur fd9 en direct. */
+const DEFAULT_START_URL = LECLERC_PORTAL_URL;
 
 function waitForEnter(prompt: string): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -42,18 +44,16 @@ async function main() {
     process.exit(1);
   }
 
-  const storeUrl =
-    keys?.storeUrl?.trim() ||
-    process.env.LECLERCDRIVE_STORE_URL?.trim() ||
-    DEFAULT_STORE_URL;
+  const startUrl = DEFAULT_START_URL;
 
   console.log("Ouverture de Chrome (Playwright)…");
-  console.log("URL :", storeUrl);
+  console.log("URL de départ :", startUrl);
   console.log("");
-  console.log("Étapes :");
-  console.log("  1. Passez le captcha DataDome si demandé");
-  console.log("  2. Connectez-vous à votre compte Leclerc");
-  console.log("  3. Vérifiez que le magasin / panier s’affiche");
+  console.log("Étapes (parcours naturel, comme un humain) :");
+  console.log("  1. Sur www.leclercdrive.fr : passez le captcha si demandé");
+  console.log("  2. Connectez-vous et choisissez votre magasin (redirection fd9…)");
+  console.log("  3. Arrivez sur la page drive de votre magasin (Auray, etc.)");
+  console.log("  — N’ouvrez PAS fd9-courses directement dans la barre d’adresse");
   console.log("");
 
   const browser = await chromium.launch({ headless: false });
@@ -65,7 +65,7 @@ async function main() {
   });
   const page = await context.newPage();
 
-  await page.goto(storeUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.goto(startUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
 
   await waitForEnter(
     "Quand vous êtes connecté et sur le drive, appuyez sur Entrée pour exporter la session… "

@@ -1,8 +1,8 @@
 /** Message d'aide affiché quand DataDome bloque les requêtes serveur. */
 export const DATADOME_HELP =
-  "DataDome bloque le fetch serveur (TLS/IP/JS). Contournement fiable : lancer « pnpm leclercdrive:harvest » " +
-  "sur votre Mac (Chrome réel), se connecter, exporter la session vers Redis — le MCP Vercel réutilise ces cookies. " +
-  "Coller uniquement datadome suffit rarement ; il faut la session navigateur complète.";
+  "Ne pas ouvrir fd9-courses en premier : passer par https://www.leclercdrive.fr, se connecter, " +
+  "puis laisser rediriger vers le magasin. Contournement fiable : « pnpm leclercdrive:harvest » " +
+  "(Chrome réel) puis export session vers Redis pour le MCP Vercel.";
 
 /** Note affichée dans les réglages / statut compte. */
 export const DATADOME_ROTATION_NOTE =

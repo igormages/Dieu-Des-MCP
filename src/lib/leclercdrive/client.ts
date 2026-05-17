@@ -20,6 +20,11 @@ import {
 } from "./datadome";
 import { getLeclercHttpProxy, leclercFetch } from "./http";
 import {
+  documentNavigationHeaders,
+  LECLERC_PORTAL_URL,
+  storePageUrl,
+} from "./navigation";
+import {
   mergeStoreConfig,
   persistStoreCache,
   resolveStoreContext,
@@ -317,19 +322,29 @@ async function syncDatadomeFromJar(
   }
 }
 
-async function warmupDatadomeOnSecureHost(
+/**
+ * Parcours naturel : www.leclercdrive.fr → page magasin fdN (jamais fd9 en entrée directe).
+ * Retourne l’URL magasin pour le referer du login.
+ */
+async function navigateNaturalEntry(
   jar: CookieJar,
   config: LeclercDriveConfig,
   username: string
-): Promise<void> {
-  await fetchWithJar(jar, `https://${config.secureHost}/`, {
+): Promise<string> {
+  await fetchWithJar(jar, LECLERC_PORTAL_URL, {
     method: "GET",
-    headers: {
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    },
+    headers: documentNavigationHeaders(),
   });
   await syncDatadomeFromJar(username, jar, config);
+
+  const magasinUrl = storePageUrl(config);
+  await fetchWithJar(jar, magasinUrl, {
+    method: "GET",
+    headers: documentNavigationHeaders({ referer: LECLERC_PORTAL_URL }),
+  });
+  await syncDatadomeFromJar(username, jar, config);
+
+  return magasinUrl;
 }
 
 function applyBrowserCookiesToJar(
@@ -470,17 +485,7 @@ async function performLogin(): Promise<SessionState> {
 
   const jar = new CookieJar();
   applyBrowserCookiesToJar(jar, browserCookies);
-  await warmupDatadomeOnSecureHost(jar, config, creds.username);
-
-  const homeUrl = `${coursesOrigin(config)}${storePagePath(config)}.aspx`;
-  await fetchWithJar(jar, homeUrl, {
-    method: "GET",
-    headers: {
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "upgrade-insecure-requests": "1",
-    },
-  });
+  const homeUrl = await navigateNaturalEntry(jar, config, creds.username);
 
   const loginBody = {
     sLogin: config.username,
@@ -918,9 +923,9 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
     },
     probe,
     recommendations: [
-      "Lancez pnpm leclercdrive:harvest sur votre Mac après connexion dans Chrome.",
-      "Un seul cookie datadome ne suffit pas : il faut ASP.NET_SessionId + cookies de session.",
-      "Sur Vercel l'IP datacenter est pénalisée ; la session harvestée contourne le login serveur.",
+      "Toujours passer par https://www.leclercdrive.fr avant fd9 (accès direct = spam).",
+      "Lancez pnpm leclercdrive:harvest : connexion sur www puis choix du magasin.",
+      "Sur Vercel, réutilisez la session harvestée (cookies complets, pas seulement datadome).",
     ],
   };
 }

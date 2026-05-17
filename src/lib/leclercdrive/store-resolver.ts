@@ -6,6 +6,7 @@ import {
   spreadDatadomeToHosts,
 } from "./datadome";
 import { leclercFetch } from "./http";
+import { documentNavigationHeaders, LECLERC_PORTAL_URL } from "./navigation";
 import type { LeclercDriveConfig } from "./types";
 
 const STORE_CACHE_PREFIX = "leclercdrive:store:";
@@ -300,6 +301,26 @@ function buildCookieHeader(
   return parts.join("; ");
 }
 
+/** Visite le portail www avant tout accès régional fdN (évite le flag « spam »). */
+async function visitPortalFirst(
+  browserCookies: Record<string, Record<string, string>>
+): Promise<Record<string, Record<string, string>>> {
+  let cookies = spreadDatadomeToHosts(mergeCookieJars({}, browserCookies), [
+    "www.leclercdrive.fr",
+    "leclercdrive.fr",
+  ]);
+  const cookieHeader = buildBrowserCookieHeader(cookies, "www.leclercdrive.fr");
+  const res = await leclercFetch(LECLERC_PORTAL_URL, {
+    method: "GET",
+    headers: {
+      ...documentNavigationHeaders(),
+      "user-agent": USER_AGENT,
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+    },
+  });
+  return ingestResponseCookies("www.leclercdrive.fr", res, cookies);
+}
+
 /**
  * Découvre le magasin et la région (fdN) via connecter.ashz sur les silos Leclerc.
  * Nécessite uniquement email + mot de passe.
@@ -315,8 +336,10 @@ export async function discoverStoreByLogin(
     );
   }
 
+  const portalCookies = await visitPortalFirst(browserCookies);
+
   for (let silo = 1; silo <= SILO_MAX; silo++) {
-    const { store } = await tryConnectOnSilo(silo, username, password, browserCookies);
+    const { store } = await tryConnectOnSilo(silo, username, password, portalCookies);
     if (store) {
       await persistStoreCache(username, store);
       return store;
