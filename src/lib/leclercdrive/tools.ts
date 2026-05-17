@@ -60,7 +60,7 @@ export function registerLeclercdriveTools(server: McpServer): void {
 
   server.tool(
     "leclercdrive_set_browser_cookies",
-    "Importe les cookies copiés depuis Chrome après connexion sur leclercdrive.fr (contourne le captcha DataDome). Collez la valeur du cookie datadome seule, ou toute la chaîne Cookie du navigateur.",
+    "Importe les cookies depuis Arc/Chrome (DevTools ou fichier cookies.txt). Préférez pnpm leclercdrive:harvest en mode CDP pour exporter toute la session depuis votre Arc.",
     {
       cookieString: z
         .string()

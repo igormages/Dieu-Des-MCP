@@ -1,8 +1,8 @@
 /** Message d'aide affiché quand DataDome bloque les requêtes serveur. */
 export const DATADOME_HELP =
-  "Ne pas ouvrir fd9-courses en premier : passer par https://www.leclercdrive.fr, se connecter, " +
-  "puis laisser rediriger vers le magasin. Contournement fiable : « pnpm leclercdrive:harvest » " +
-  "(Chrome réel) puis export session vers Redis pour le MCP Vercel.";
+  "Passer par www.leclercdrive.fr (pas fd9 en direct). Exporter la session depuis VOTRE navigateur Arc " +
+  "(pnpm leclercdrive:harvest en mode CDP) : le MCP Vercel ne peut pas imiter l’empreinte TLS/JS d’Arc, " +
+  "seulement réutiliser les cookies de session.";
 
 /** Note affichée dans les réglages / statut compte. */
 export const DATADOME_ROTATION_NOTE =

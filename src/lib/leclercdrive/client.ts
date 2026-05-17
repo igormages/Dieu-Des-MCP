@@ -919,7 +919,9 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
     },
     harvest: {
       command: "pnpm leclercdrive:harvest",
-      note: "Contournement DataDome recommandé : navigateur réel local → export session Redis (cf. Scrapfly / forums).",
+      cdpArc:
+        "/Applications/Arc.app/Contents/MacOS/Arc --remote-debugging-port=9222 puis harvest",
+      note: "Playwright seul est détecté ; mode CDP = votre Arc (même empreinte). Vercel réutilise les cookies, pas la signature TLS.",
     },
     probe,
     recommendations: [

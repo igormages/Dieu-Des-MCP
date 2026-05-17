@@ -10,7 +10,9 @@
     "cookidoo:har-check": "tsx scripts/cookidoo-har-parse-check.ts",
     "cookidoo:smoke-e2e": "tsx scripts/cookidoo-smoke-e2e.ts",
     "test:cookidoo": "node --import tsx --test src/lib/cookidoo/customer-recipe-payloads.test.ts",
-    "leclercdrive:harvest": "tsx scripts/leclercdrive-harvest-session.ts"
+    "leclercdrive:harvest": "tsx scripts/leclercdrive-harvest-session.ts",
+    "leclercdrive:harvest:playwright": "LECLERCDRIVE_HARVEST_MODE=playwright tsx scripts/leclercdrive-harvest-session.ts",
+    "leclercdrive:import-cookies": "tsx scripts/leclercdrive-import-cookies.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",
