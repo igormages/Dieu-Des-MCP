@@ -26,11 +26,23 @@ function jsonText(data: unknown) {
 export function registerLeclercdriveTools(server: McpServer): void {
   server.tool(
     "leclercdrive_get_account",
-    "Vérifie la session Leclerc Drive et retourne les infos client connecté (nom, magasin, point de livraison).",
+    "Vérifie la session Leclerc Drive et retourne les infos client connecté (nom, magasin, point de livraison) ainsi que le magasin détecté automatiquement.",
     {},
     async () => {
-      const res = await leclercdriveGetConnectedUser();
-      return jsonText(res);
+      const [res, config] = await Promise.all([
+        leclercdriveGetConnectedUser(),
+        getLeclercdrivePublicConfig(),
+      ]);
+      return jsonText({
+        account: res,
+        store: {
+          pointLivraison: config.pointLivraison,
+          storePath: config.storePath,
+          storeSlug: config.storeSlug,
+          coursesHost: config.coursesHost,
+          secureHost: config.secureHost,
+        },
+      });
     }
   );
 

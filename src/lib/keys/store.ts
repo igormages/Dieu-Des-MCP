@@ -277,31 +277,6 @@ export const SERVICE_DEFINITIONS: Record<
         label: "Mot de passe",
         placeholder: "votre mot de passe",
       },
-      {
-        key: "pointLivraison",
-        label: "N° point de livraison",
-        placeholder: "175601",
-      },
-      {
-        key: "storePath",
-        label: "Chemin magasin API",
-        placeholder: "magasin-175601-175601",
-      },
-      {
-        key: "storeSlug",
-        label: "Slug magasin (ville)",
-        placeholder: "Auray",
-      },
-      {
-        key: "coursesHost",
-        label: "Hôte courses (région)",
-        placeholder: "fd9-courses.leclercdrive.fr",
-      },
-      {
-        key: "secureHost",
-        label: "Hôte sécurisé",
-        placeholder: "fd9-secure.leclercdrive.fr",
-      },
     ],
   },
 };

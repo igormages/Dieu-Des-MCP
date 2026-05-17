@@ -4,6 +4,12 @@ import {
   parseCartFromPanierResponse,
   type LeclercCartSummary,
 } from "./parsing";
+import {
+  mergeStoreConfig,
+  persistStoreCache,
+  resolveStoreContext,
+} from "./store-resolver";
+import type { LeclercDriveConfig, LeclercDriveCredentials } from "./types";
 
 const SESSION_KEY = "leclercdrive:session:default";
 const SESSION_TTL_SECONDS = 60 * 60 * 4;
@@ -20,20 +26,9 @@ const COMMON_HEADERS: Record<string, string> = {
   "sec-ch-ua-platform": '"macOS"',
 };
 
-export interface LeclercDriveConfig {
-  username: string;
-  password: string;
-  /** Numéro point de livraison (ex. 175601). */
-  pointLivraison: string;
-  /** Préfixe magasin API (ex. magasin-175601-175601). */
-  storePath: string;
-  /** Slug ville pour URLs pages (ex. Auray). */
-  storeSlug: string;
-  coursesHost: string;
-  secureHost: string;
-  /** Univers drive = 2 (d’après HAR Auray). */
-  eUniversContexte: number;
-}
+export type { LeclercDriveConfig } from "./types";
+
+let resolvedConfigCache: LeclercDriveConfig | null = null;
 
 interface SessionState {
   cookies: Record<string, Record<string, string>>;
@@ -149,6 +144,7 @@ async function persistSession(state: SessionState): Promise<void> {
 
 export async function leclercdriveLogout(): Promise<void> {
   cachedSession = null;
+  resolvedConfigCache = null;
   const kv = getKvClient();
   if (kv) await kv.del(SESSION_KEY);
 }
@@ -190,7 +186,7 @@ async function fetchWithJar(
   throw new Error(`Leclerc Drive : trop de redirections (>${maxRedirects}).`);
 }
 
-export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
+async function getCredentialsFromEnvOrKv(): Promise<LeclercDriveCredentials> {
   const keys = await getServiceKeys("leclercdrive");
   const username =
     (typeof keys?.username === "string" && keys.username.trim()) ||
@@ -198,29 +194,6 @@ export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
   const password =
     (typeof keys?.password === "string" && keys.password.trim()) ||
     process.env.LECLERCDRIVE_PASSWORD?.trim();
-  const pointLivraison =
-    (typeof keys?.pointLivraison === "string" && keys.pointLivraison.trim()) ||
-    process.env.LECLERCDRIVE_POINT_LIVRAISON?.trim() ||
-    "175601";
-  const storePath =
-    (typeof keys?.storePath === "string" && keys.storePath.trim()) ||
-    process.env.LECLERCDRIVE_STORE_PATH?.trim() ||
-    "magasin-175601-175601";
-  const storeSlug =
-    (typeof keys?.storeSlug === "string" && keys.storeSlug.trim()) ||
-    process.env.LECLERCDRIVE_STORE_SLUG?.trim() ||
-    "Auray";
-  const coursesHost =
-    (typeof keys?.coursesHost === "string" && keys.coursesHost.trim()) ||
-    process.env.LECLERCDRIVE_COURSES_HOST?.trim() ||
-    "fd9-courses.leclercdrive.fr";
-  const secureHost =
-    (typeof keys?.secureHost === "string" && keys.secureHost.trim()) ||
-    process.env.LECLERCDRIVE_SECURE_HOST?.trim() ||
-    "fd9-secure.leclercdrive.fr";
-  const eUniversContexte = Number(
-    keys?.eUniversContexte ?? process.env.LECLERCDRIVE_E_UNIVERS ?? "2"
-  );
 
   if (!username || !password) {
     throw new Error(
@@ -231,13 +204,34 @@ export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
   return {
     username,
     password,
-    pointLivraison,
-    storePath,
-    storeSlug,
-    coursesHost,
-    secureHost,
-    eUniversContexte,
+    pointLivraison: keys?.pointLivraison?.trim() || process.env.LECLERCDRIVE_POINT_LIVRAISON?.trim(),
+    storePath: keys?.storePath?.trim() || process.env.LECLERCDRIVE_STORE_PATH?.trim(),
+    storeSlug: keys?.storeSlug?.trim() || process.env.LECLERCDRIVE_STORE_SLUG?.trim(),
+    coursesHost: keys?.coursesHost?.trim() || process.env.LECLERCDRIVE_COURSES_HOST?.trim(),
+    secureHost: keys?.secureHost?.trim() || process.env.LECLERCDRIVE_SECURE_HOST?.trim(),
+    eUniversContexte: keys?.eUniversContexte
+      ? Number(keys.eUniversContexte)
+      : process.env.LECLERCDRIVE_E_UNIVERS
+        ? Number(process.env.LECLERCDRIVE_E_UNIVERS)
+        : undefined,
   };
+}
+
+export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
+  if (resolvedConfigCache) return resolvedConfigCache;
+
+  const creds = await getCredentialsFromEnvOrKv();
+  const store = await resolveStoreContext(creds.username, creds.password, {
+    pointLivraison: creds.pointLivraison,
+    storePath: creds.storePath,
+    storeSlug: creds.storeSlug,
+    coursesHost: creds.coursesHost,
+    secureHost: creds.secureHost,
+    eUniversContexte: creds.eUniversContexte,
+  });
+
+  resolvedConfigCache = mergeStoreConfig(creds.username, creds.password, creds, store);
+  return resolvedConfigCache;
 }
 
 function coursesOrigin(config: LeclercDriveConfig): string {
@@ -322,6 +316,16 @@ async function performLogin(): Promise<SessionState> {
     throw new Error(
       `Leclerc Drive : connexion non confirmée après connecter.ashz. Réponse connecter : ${connectText.slice(0, 300)}`
     );
+  }
+
+  const redirectStore = connectJson.objDonneesReponse as { sUrlRedirection?: string } | undefined;
+  if (redirectStore?.sUrlRedirection) {
+    const { parseStoreFromUrl } = await import("./store-resolver");
+    const fromRedirect = parseStoreFromUrl(redirectStore.sUrlRedirection);
+    if (fromRedirect) {
+      await persistStoreCache(config.username, fromRedirect);
+      resolvedConfigCache = mergeStoreConfig(config.username, config.password, {}, fromRedirect);
+    }
   }
 
   const state = await buildSession(jar);
@@ -547,6 +551,9 @@ export async function leclercdriveForceRelogin(): Promise<{ loggedInAt: string }
   return { loggedInAt: new Date(state.loggedInAt).toISOString() };
 }
 
-export function getLeclercdrivePublicConfig(): Promise<LeclercDriveConfig> {
-  return getLeclercDriveConfig();
+export async function getLeclercdrivePublicConfig(): Promise<
+  Omit<LeclercDriveConfig, "username" | "password">
+> {
+  const { username: _u, password: _p, ...publicConfig } = await getLeclercDriveConfig();
+  return publicConfig;
 }
