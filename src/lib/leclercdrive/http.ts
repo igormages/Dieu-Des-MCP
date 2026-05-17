@@ -1,26 +1,33 @@
-import { ProxyAgent, type Dispatcher } from "undici";
+import type { Dispatcher } from "undici";
 
 let proxyDispatcher: Dispatcher | undefined;
+let proxyLoadFailed = false;
 
-/** Proxy résidentiel optionnel (ex. http://user:pass@host:port). */
+/** Proxy optionnel (ex. http://127.0.0.1:89 pour NordVPN sur le VPS). */
 export function getLeclercHttpProxy(): string | undefined {
   return process.env.LECLERCDRIVE_HTTP_PROXY?.trim() || undefined;
 }
 
-export function getLeclercFetchDispatcher(): Dispatcher | undefined {
+async function getLeclercFetchDispatcher(): Promise<Dispatcher | undefined> {
   const proxy = getLeclercHttpProxy();
-  if (!proxy) return undefined;
-  if (!proxyDispatcher) {
+  if (!proxy || proxyLoadFailed) return undefined;
+  if (proxyDispatcher) return proxyDispatcher;
+
+  try {
+    const { ProxyAgent } = await import("undici");
     proxyDispatcher = new ProxyAgent(proxy);
+    return proxyDispatcher;
+  } catch {
+    proxyLoadFailed = true;
+    return undefined;
   }
-  return proxyDispatcher;
 }
 
-export function leclercFetch(
+export async function leclercFetch(
   url: string,
   init?: RequestInit
 ): Promise<Response> {
-  const dispatcher = getLeclercFetchDispatcher();
+  const dispatcher = await getLeclercFetchDispatcher();
   if (!dispatcher) return fetch(url, init);
   return fetch(url, { ...init, dispatcher } as RequestInit);
 }

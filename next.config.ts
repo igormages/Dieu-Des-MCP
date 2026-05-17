@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@modelcontextprotocol/sdk"],
+  serverExternalPackages: ["@modelcontextprotocol/sdk", "undici"],
 };
 
 export default nextConfig;
