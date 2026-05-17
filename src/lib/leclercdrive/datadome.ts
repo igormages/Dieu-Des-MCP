@@ -1,10 +1,8 @@
 /** Message d'aide affiché quand DataDome bloque les requêtes serveur. */
 export const DATADOME_HELP =
-  "DataDome bloque les requêtes depuis le serveur MCP. " +
-  "Passez le captcha sur le MÊME sous-domaine que le MCP (ex. https://fd9-secure.leclercdrive.fr), " +
-  "copiez le cookie « datadome » depuis DevTools → Application → Cookies de CE host. " +
-  "Si ça bloque encore, configurez LECLERCDRIVE_HTTP_PROXY (proxy résidentiel). " +
-  "Utilisez leclercdrive_diagnose pour vérifier persistance et scope des cookies.";
+  "DataDome bloque le fetch serveur (TLS/IP/JS). Contournement fiable : lancer « pnpm leclercdrive:harvest » " +
+  "sur votre Mac (Chrome réel), se connecter, exporter la session vers Redis — le MCP Vercel réutilise ces cookies. " +
+  "Coller uniquement datadome suffit rarement ; il faut la session navigateur complète.";
 
 /** Note affichée dans les réglages / statut compte. */
 export const DATADOME_ROTATION_NOTE =
@@ -33,7 +31,8 @@ export function detectDataDomeBlock(
   if (
     text.includes("captcha-delivery.com") ||
     text.includes("geo.captcha-delivery") ||
-    text.includes("datadome captcha")
+    text.includes("datadome captcha") ||
+    (text.includes('"url"') && text.includes("captcha-delivery"))
   ) {
     return true;
   }

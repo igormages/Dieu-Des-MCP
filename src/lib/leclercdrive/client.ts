@@ -237,6 +237,20 @@ export async function persistBrowserCookies(
   await kv.set(browserCookiesKey(username), cookies);
 }
 
+/** Session complète exportée par le script harvest (cookies navigateur + MCP). */
+export async function persistHarvestedSession(
+  jar: Record<string, Record<string, string>>
+): Promise<void> {
+  const state: SessionState = {
+    cookies: jar,
+    loggedInAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+  };
+  cachedSession = state;
+  resolvedConfigCache = null;
+  await persistSession(state);
+}
+
 export async function leclercdriveSetBrowserCookies(
   cookieString: string
 ): Promise<{ saved: boolean; hasDatadome: boolean; cookieNames: string[] }> {
@@ -494,10 +508,19 @@ async function performLogin(): Promise<SessionState> {
   );
 
   const connectText = await connectRes.response.text();
+  if (detectDataDomeBlock(connectRes.finalUrl, connectRes.response.status, connectText)) {
+    throw new DataDomeBlockedError();
+  }
+
   let connectJson: Record<string, unknown> = {};
   try {
     connectJson = JSON.parse(connectText) as Record<string, unknown>;
   } catch {
+  }
+
+  const interstitialUrl = connectJson.url as string | undefined;
+  if (interstitialUrl?.includes("captcha-delivery.com")) {
+    throw new DataDomeBlockedError();
   }
 
   const compteRendu = connectJson.CompteRendu as {
@@ -507,9 +530,10 @@ async function performLogin(): Promise<SessionState> {
   if (compteRendu?.iCompteRendu === -1) {
     const action = compteRendu.CompteRendu?.sAction;
     const motif = compteRendu.CompteRendu?.sMotif;
-    if (action === "CAPTCHA" || motif === "COMPTE_NOUVEAU_TERMINAL") {
+    if (action === "CAPTCHA" || motif === "COMPTE_NOUVEAU_TERMINAL" || motif === "MODE_DEGRADE") {
       throw new Error(
-        "Leclerc Drive : captcha « nouveau terminal » requis. Connectez-vous une fois sur https://fd9-secure.leclercdrive.fr dans Chrome (même IP que le serveur si possible, ex. NordVPN sur le VPS), validez le captcha/email, puis réessayez."
+        "Leclerc Drive : captcha ou validation « nouveau terminal » requis. " +
+          "Lancez « pnpm leclercdrive:harvest » sur votre Mac, connectez-vous dans Chrome, puis réessayez le MCP."
       );
     }
     throw new Error(
@@ -592,6 +616,14 @@ async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveCo
         return { jar, config };
       }
     }
+  }
+
+  const harvestedJar = prepareJar({});
+  if (await checkConnected(harvestedJar, config)) {
+    const state = await buildSession(harvestedJar);
+    cachedSession = state;
+    await persistSession(state);
+    return { jar: harvestedJar, config };
   }
 
   if (!inflightLogin) {
@@ -878,17 +910,17 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
     configError,
     proxy: {
       configured: Boolean(getLeclercHttpProxy()),
-      hint: "LECLERCDRIVE_HTTP_PROXY=http://127.0.0.1:89 (NordVPN sur le VPS : nordvpn connect puis nordvpn set proxy on)",
-      nordVpnNote:
-        "NordVPN sur le serveur Scaleway peut aider (IP moins « datacenter »), mais ce n'est pas un proxy résidentiel. Installez nordvpn sur le VPS, connectez-vous à France, puis relancez le MCP.",
+      hint: "LECLERCDRIVE_HTTP_PROXY=http://user:pass@host:port (proxy résidentiel, optionnel sur Vercel)",
+    },
+    harvest: {
+      command: "pnpm leclercdrive:harvest",
+      note: "Contournement DataDome recommandé : navigateur réel local → export session Redis (cf. Scrapfly / forums).",
     },
     probe,
     recommendations: [
-      "Passez le captcha sur https://" +
-        secureHost +
-        " (pas seulement www) puis collez le cookie datadome de CE host.",
-      "Vérifiez persistence.datadomeInKv après Save sur /settings.",
-      "Si probe.blocked=true malgré tout, utilisez un proxy résidentiel (LECLERCDRIVE_HTTP_PROXY).",
+      "Lancez pnpm leclercdrive:harvest sur votre Mac après connexion dans Chrome.",
+      "Un seul cookie datadome ne suffit pas : il faut ASP.NET_SessionId + cookies de session.",
+      "Sur Vercel l'IP datacenter est pénalisée ; la session harvestée contourne le login serveur.",
     ],
   };
 }

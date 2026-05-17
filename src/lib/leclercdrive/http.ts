@@ -3,7 +3,7 @@ import type { Dispatcher } from "undici";
 let proxyDispatcher: Dispatcher | undefined;
 let proxyLoadFailed = false;
 
-/** Proxy optionnel (ex. http://127.0.0.1:89 pour NordVPN sur le VPS). */
+/** Proxy HTTP optionnel (résidentiel recommandé sur Vercel). */
 export function getLeclercHttpProxy(): string | undefined {
   return process.env.LECLERCDRIVE_HTTP_PROXY?.trim() || undefined;
 }

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "cookidoo:har-check": "tsx scripts/cookidoo-har-parse-check.ts",
     "cookidoo:smoke-e2e": "tsx scripts/cookidoo-smoke-e2e.ts",
-    "test:cookidoo": "node --import tsx --test src/lib/cookidoo/customer-recipe-payloads.test.ts"
+    "test:cookidoo": "node --import tsx --test src/lib/cookidoo/customer-recipe-payloads.test.ts",
+    "leclercdrive:harvest": "tsx scripts/leclercdrive-harvest-session.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",
@@ -35,6 +36,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9.25.1",
     "eslint-config-next": "^16.2.4",
+    "playwright": "^1.52.0",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }
