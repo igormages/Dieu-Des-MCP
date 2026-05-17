@@ -30,7 +30,13 @@ export async function GET() {
       configured: boolean;
       source: string;
       noKeysRequired: boolean;
-      fields: { key: string; label: string; placeholder: string; maskedValue: string | null }[];
+      fields: {
+        key: string;
+        label: string;
+        placeholder: string;
+        required: boolean;
+        maskedValue: string | null;
+      }[];
     }
   > = {};
 
@@ -45,6 +51,7 @@ export async function GET() {
       noKeysRequired: def.noKeysRequired ?? false,
       fields: def.fields.map((f) => ({
         ...f,
+        required: f.required !== false,
         maskedValue: keys?.[f.key] ? maskValue(keys[f.key]) : null,
       })),
     };
@@ -80,16 +87,31 @@ export async function PUT(request: Request) {
     );
   }
 
+  const existing = (await getServiceKeys(service)) ?? {};
+  const merged: Record<string, string> = { ...existing };
+
   for (const field of def.fields) {
-    if (!keys[field.key]?.trim()) {
-      return NextResponse.json(
-        { error: `Le champ "${field.label}" est requis` },
-        { status: 400 }
-      );
+    const incoming = keys[field.key]?.trim() ?? "";
+    if (incoming) {
+      merged[field.key] = incoming;
+      continue;
     }
+    if (field.required === false) continue;
+    if (existing[field.key]?.trim()) continue;
+    return NextResponse.json(
+      { error: `Le champ "${field.label}" est requis` },
+      { status: 400 }
+    );
   }
 
-  await setServiceKeys(service, keys);
+  if (Object.keys(merged).length === 0) {
+    return NextResponse.json(
+      { error: "Aucune clé à enregistrer" },
+      { status: 400 }
+    );
+  }
+
+  await setServiceKeys(service, merged);
   return NextResponse.json({ success: true });
 }
 

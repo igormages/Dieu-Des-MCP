@@ -6,6 +6,7 @@ interface FieldDef {
   key: string;
   label: string;
   placeholder: string;
+  required: boolean;
   maskedValue: string | null;
 }
 
@@ -602,8 +603,20 @@ export function SettingsForm() {
     const keys: Record<string, string> = {};
     for (const f of fields) {
       const val = formValues[service]?.[f.key]?.trim();
-      if (!val) { showMessage("error", `Le champ "${f.label}" est requis`); return; }
-      keys[f.key] = val;
+      if (val) keys[f.key] = val;
+    }
+
+    if (Object.keys(keys).length === 0) {
+      showMessage("error", "Renseignez au moins un champ à mettre à jour");
+      return;
+    }
+
+    for (const f of fields) {
+      if (f.required === false) continue;
+      if (keys[f.key]) continue;
+      if (f.maskedValue) continue;
+      showMessage("error", `Le champ "${f.label}" est requis`);
+      return;
     }
 
     setSaving(service);
@@ -729,9 +742,18 @@ export function SettingsForm() {
               <>
                 {service.fields.map((field) => (
                   <div key={field.key}>
-                    <label className="mb-1 block text-xs font-medium text-gray-700">{field.label}</label>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">
+                      {field.label}
+                      {field.required === false && (
+                        <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+                      )}
+                    </label>
                     <input
-                      type="password"
+                      type={
+                        field.key === "password" || field.key === "secretKey" || field.key.endsWith("Token")
+                          ? "password"
+                          : "text"
+                      }
                       placeholder={field.maskedValue ? `Actuel : ${field.maskedValue}` : field.placeholder}
                       value={formValues[serviceKey]?.[field.key] || ""}
                       onChange={(e) => updateField(serviceKey, field.key, e.target.value)}
@@ -778,17 +800,27 @@ export function SettingsForm() {
           onClose={() => setHelpOpen(null)}
           onSave={async (values) => {
             const fields = data.services[helpOpen].fields;
+            const keys: Record<string, string> = {};
             for (const f of fields) {
-              if (!values[f.key]?.trim()) {
-                showMessage("error", `Le champ "${f.label}" est requis`);
-                return;
-              }
+              const val = values[f.key]?.trim();
+              if (val) keys[f.key] = val;
+            }
+            if (Object.keys(keys).length === 0) {
+              showMessage("error", "Renseignez au moins un champ à mettre à jour");
+              return;
+            }
+            for (const f of fields) {
+              if (f.required === false) continue;
+              if (keys[f.key]) continue;
+              if (f.maskedValue) continue;
+              showMessage("error", `Le champ "${f.label}" est requis`);
+              return;
             }
             setSaving(helpOpen);
             const res = await fetch("/api/keys", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ service: helpOpen, keys: values }),
+              body: JSON.stringify({ service: helpOpen, keys }),
             });
             if (res.ok) {
               showMessage("success", `${data.services[helpOpen].label} configuré`);

@@ -8,7 +8,7 @@ export const SERVICE_DEFINITIONS: Record<
   string,
   {
     label: string;
-    fields: { key: string; label: string; placeholder: string }[];
+    fields: { key: string; label: string; placeholder: string; required?: boolean }[];
     /** Affiché dans les réglages comme disponible sans saisie de clés (ex. flux public). */
     noKeysRequired?: boolean;
   }
@@ -50,6 +50,7 @@ export const SERVICE_DEFINITIONS: Record<
         key: "adminKey",
         label: "Admin API Key (optionnel, pour usage & workspaces)",
         placeholder: "sk-ant-admin-...",
+        required: false,
       },
     ],
   },
@@ -281,11 +282,13 @@ export const SERVICE_DEFINITIONS: Record<
         key: "datadomeCookie",
         label: "Cookie DataDome (une fois après captcha)",
         placeholder: "valeur datadome — change dans Chrome à chaque page, normal",
+        required: false,
       },
       {
         key: "storeUrl",
         label: "URL magasin (optionnel)",
         placeholder: "https://fd9-courses.leclercdrive.fr/magasin-…-Auray.aspx",
+        required: false,
       },
     ],
   },
