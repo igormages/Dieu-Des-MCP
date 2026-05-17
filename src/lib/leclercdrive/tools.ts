@@ -11,6 +11,7 @@ import {
   leclercdriveSearch,
   leclercdriveLogout,
   leclercdriveSetBrowserCookies,
+  leclercdriveDiagnose,
   getLeclercdrivePublicConfig,
 } from "./client";
 import {
@@ -48,6 +49,13 @@ export function registerLeclercdriveTools(server: McpServer): void {
         datadome,
       });
     }
+  );
+
+  server.tool(
+    "leclercdrive_diagnose",
+    "Diagnostic DataDome / cookies : persistance KV, scope sous-domaines, sonde sur fdN-secure, proxy. À lancer si le captcha persiste.",
+    {},
+    async () => jsonText(await leclercdriveDiagnose())
   );
 
   server.tool(

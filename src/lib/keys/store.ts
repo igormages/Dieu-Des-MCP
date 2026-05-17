@@ -437,6 +437,14 @@ function getFromEnv(service: string): ServiceConfig | null {
   }
 }
 
+function isServiceConfigured(service: string, stored: ServiceConfig): boolean {
+  const def = SERVICE_DEFINITIONS[service];
+  if (!def) return Object.values(stored).some(Boolean);
+  const required = def.fields.filter((f) => f.required !== false);
+  if (required.length === 0) return Object.values(stored).some(Boolean);
+  return required.every((f) => Boolean(stored[f.key]?.trim()));
+}
+
 const KEYS_PREFIX = "mcp:keys:";
 
 export async function getServiceKeys(
@@ -486,14 +494,14 @@ export async function getAllServiceStatuses(): Promise<
 
     if (kv) {
       const stored = await kv.get<ServiceConfig>(`${KEYS_PREFIX}${service}`);
-      if (stored && Object.values(stored).every(Boolean)) {
+      if (stored && isServiceConfigured(service, stored)) {
         result[service] = { configured: true, source: "kv" };
         continue;
       }
     }
 
     const env = getFromEnv(service);
-    if (env && Object.values(env).every(Boolean)) {
+    if (env && isServiceConfigured(service, env)) {
       result[service] = { configured: true, source: "env" };
     } else {
       result[service] = { configured: false, source: "none" };

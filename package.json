@@ -25,6 +25,7 @@
     "react-dom": "^19.1.0",
     "rss-parser": "^3.13.0",
     "tailwindcss": "^4.2.2",
+    "undici": "^7.25.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

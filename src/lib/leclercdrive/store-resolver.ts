@@ -1,5 +1,11 @@
 import { getKvClient } from "@/lib/keys/store";
-import { DATADOME_HELP, hasDatadomeCookie, mergeCookieJars } from "./datadome";
+import {
+  DATADOME_HELP,
+  hasDatadomeCookie,
+  mergeCookieJars,
+  spreadDatadomeToHosts,
+} from "./datadome";
+import { leclercFetch } from "./http";
 import type { LeclercDriveConfig } from "./types";
 
 const STORE_CACHE_PREFIX = "leclercdrive:store:";
@@ -138,7 +144,10 @@ async function tryConnectOnSilo(
   const origin = `https://${coursesHost}`;
 
   let cookies: Record<string, Record<string, string>> = browserCookies
-    ? mergeCookieJars({}, browserCookies)
+    ? spreadDatadomeToHosts(mergeCookieJars({}, browserCookies), [
+        secureHost,
+        coursesHost,
+      ])
     : {};
 
   const loginBody = {
@@ -150,7 +159,7 @@ async function tryConnectOnSilo(
   };
 
   const cookieHeader = buildBrowserCookieHeader(cookies, secureHost);
-  const res = await fetch(`https://${secureHost}/connecter.ashz`, {
+  const res = await leclercFetch(`https://${secureHost}/connecter.ashz`, {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
@@ -174,7 +183,7 @@ async function tryConnectOnSilo(
     if (store) return { store, cookies };
   }
 
-  const estRes = await fetch(`https://${secureHost}/drive/estconnecte.ashz`, {
+  const estRes = await leclercFetch(`https://${secureHost}/drive/estconnecte.ashz`, {
     method: "POST",
     headers: {
       cookie: buildCookieHeader(cookies, secureHost),

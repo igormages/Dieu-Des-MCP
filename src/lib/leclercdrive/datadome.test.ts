@@ -6,6 +6,7 @@ import {
   extractDatadomeValue,
   hasDatadomeCookie,
   parseBrowserCookieImport,
+  spreadDatadomeToHosts,
 } from "./datadome";
 
 describe("leclercdrive datadome", () => {
@@ -36,5 +37,13 @@ describe("leclercdrive datadome", () => {
     const stored = parseBrowserCookieImport("datadome=old");
     const rotated = applyDatadomeRotation(stored, "new-token");
     assert.equal(extractDatadomeValue(rotated), "new-token");
+  });
+
+  it("réplique datadome sur les sous-domaines fdN", () => {
+    const jar = parseBrowserCookieImport("abc123", [
+      "fd9-secure.leclercdrive.fr",
+    ]);
+    assert.equal(jar["fd9-secure.leclercdrive.fr"]?.datadome, "abc123");
+    assert.equal(jar["leclercdrive.fr"]?.datadome, "abc123");
   });
 });

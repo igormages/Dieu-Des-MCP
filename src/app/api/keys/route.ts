@@ -35,6 +35,7 @@ export async function GET() {
         label: string;
         placeholder: string;
         required: boolean;
+        hasValue: boolean;
         maskedValue: string | null;
       }[];
     }
@@ -52,6 +53,7 @@ export async function GET() {
       fields: def.fields.map((f) => ({
         ...f,
         required: f.required !== false,
+        hasValue: Boolean(keys?.[f.key]?.trim()),
         maskedValue: keys?.[f.key] ? maskValue(keys[f.key]) : null,
       })),
     };

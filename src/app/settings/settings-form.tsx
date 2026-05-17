@@ -7,6 +7,7 @@ interface FieldDef {
   label: string;
   placeholder: string;
   required: boolean;
+  hasValue: boolean;
   maskedValue: string | null;
 }
 
@@ -746,6 +747,9 @@ export function SettingsForm() {
                       {field.label}
                       {field.required === false && (
                         <span className="ml-1 font-normal text-gray-400">(optionnel)</span>
+                      )}
+                      {field.hasValue && (
+                        <span className="ml-1 font-normal text-green-600">✓ enregistré</span>
                       )}
                     </label>
                     <input

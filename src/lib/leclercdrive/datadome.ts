@@ -1,10 +1,10 @@
 /** Message d'aide affiché quand DataDome bloque les requêtes serveur. */
 export const DATADOME_HELP =
   "DataDome bloque les requêtes depuis le serveur MCP. " +
-  "Connectez-vous sur https://www.leclercdrive.fr dans Chrome, passez le captcha si demandé, " +
-  "copiez une fois le cookie « datadome » (DevTools → Application → Cookies). " +
-  "Sa valeur change à chaque rechargement de page dans le navigateur — c'est normal : " +
-  "ce n'est pas une expiration, le serveur MCP met à jour automatiquement le cookie quand Leclerc en renvoie un nouveau.";
+  "Passez le captcha sur le MÊME sous-domaine que le MCP (ex. https://fd9-secure.leclercdrive.fr), " +
+  "copiez le cookie « datadome » depuis DevTools → Application → Cookies de CE host. " +
+  "Si ça bloque encore, configurez LECLERCDRIVE_HTTP_PROXY (proxy résidentiel). " +
+  "Utilisez leclercdrive_diagnose pour vérifier persistance et scope des cookies.";
 
 /** Note affichée dans les réglages / statut compte. */
 export const DATADOME_ROTATION_NOTE =
@@ -52,16 +52,50 @@ export function detectDataDomeBlock(
 
 const DEFAULT_COOKIE_HOST = "leclercdrive.fr";
 
-/** Parse un export navigateur : valeur seule, paires name=value, ou JSON jar. */
+const BASE_DATADOME_HOSTS = ["leclercdrive.fr", "www.leclercdrive.fr"];
+
+/** Réplique datadome sur chaque host Leclerc (sous-domaines fdN-* inclus). */
+export function spreadDatadomeToHosts(
+  jar: Record<string, Record<string, string>>,
+  extraHosts: string[] = []
+): Record<string, Record<string, string>> {
+  const value = extractDatadomeValue(jar);
+  if (!value) return jar;
+
+  const hosts = [
+    ...new Set(
+      [...BASE_DATADOME_HOSTS, ...extraHosts]
+        .map((h) => h.replace(/^\./, "").toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+
+  let out = jar;
+  for (const host of hosts) {
+    out = mergeCookieJars(out, { [host]: { datadome: value } });
+  }
+  return out;
+}
+
+/** Parse un export navigateur : valeur seule, paires name=value, JSON jar, ou « @host valeur ». */
 export function parseBrowserCookieImport(
-  raw: string
+  raw: string,
+  extraHosts: string[] = []
 ): Record<string, Record<string, string>> {
   const trimmed = raw.trim();
   if (!trimmed) return {};
 
   if (trimmed.startsWith("{")) {
     const parsed = JSON.parse(trimmed) as Record<string, Record<string, string>>;
-    return parsed;
+    return spreadDatadomeToHosts(parsed, extraHosts);
+  }
+
+  const hostPrefix = trimmed.match(/^@([a-z0-9.-]+)\s+(.+)$/i);
+  if (hostPrefix) {
+    const host = hostPrefix[1].toLowerCase();
+    const rest = hostPrefix[2].trim();
+    const inner = parseBrowserCookieImport(rest, extraHosts);
+    return spreadDatadomeToHosts(inner, [host, ...extraHosts]);
   }
 
   const jar: Record<string, Record<string, string>> = {};
@@ -69,7 +103,7 @@ export function parseBrowserCookieImport(
 
   if (!trimmed.includes("=")) {
     jar[DEFAULT_COOKIE_HOST].datadome = trimmed;
-    return jar;
+    return spreadDatadomeToHosts(jar, extraHosts);
   }
 
   for (const segment of trimmed.split(";")) {
@@ -81,7 +115,7 @@ export function parseBrowserCookieImport(
     const value = part.slice(eq + 1).trim();
     if (name && value) jar[DEFAULT_COOKIE_HOST][name] = value;
   }
-  return jar;
+  return spreadDatadomeToHosts(jar, extraHosts);
 }
 
 export function mergeCookieJars(
@@ -118,9 +152,24 @@ export function extractDatadomeValue(
 /** Met à jour le jar stocké si Leclerc a renvoyé un datadome plus récent. */
 export function applyDatadomeRotation(
   stored: Record<string, Record<string, string>>,
-  latestValue: string
+  latestValue: string,
+  extraHosts: string[] = []
 ): Record<string, Record<string, string>> {
-  return mergeCookieJars(stored, {
-    [DEFAULT_COOKIE_HOST]: { datadome: latestValue },
-  });
+  return spreadDatadomeToHosts(
+    mergeCookieJars(stored, { [DEFAULT_COOKIE_HOST]: { datadome: latestValue } }),
+    extraHosts
+  );
+}
+
+export function maskCookieValue(value: string): string {
+  if (value.length <= 12) return "••••••••";
+  return `${value.slice(0, 8)}…${value.slice(-6)}`;
+}
+
+export function listDatadomeHosts(
+  jar: Record<string, Record<string, string>>
+): string[] {
+  return Object.entries(jar)
+    .filter(([, cookies]) => cookies.datadome)
+    .map(([host]) => host);
 }
