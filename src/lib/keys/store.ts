@@ -279,8 +279,8 @@ export const SERVICE_DEFINITIONS: Record<
       },
       {
         key: "datadomeCookie",
-        label: "Cookie DataDome (navigateur)",
-        placeholder: "valeur du cookie datadome depuis DevTools",
+        label: "Cookie DataDome (une fois après captcha)",
+        placeholder: "valeur datadome — change dans Chrome à chaque page, normal",
       },
       {
         key: "storeUrl",

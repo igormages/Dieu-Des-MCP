@@ -1,9 +1,15 @@
 /** Message d'aide affiché quand DataDome bloque les requêtes serveur. */
 export const DATADOME_HELP =
   "DataDome bloque les requêtes depuis le serveur MCP. " +
-  "Connectez-vous sur https://www.leclercdrive.fr dans Chrome (même compte), passez le captcha si demandé, " +
-  "puis copiez le cookie « datadome » (DevTools → Application → Cookies → leclercdrive.fr) " +
-  "dans /settings → Leclerc Drive → Cookie DataDome, ou appelez leclercdrive_set_browser_cookies avec tous les cookies.";
+  "Connectez-vous sur https://www.leclercdrive.fr dans Chrome, passez le captcha si demandé, " +
+  "copiez une fois le cookie « datadome » (DevTools → Application → Cookies). " +
+  "Sa valeur change à chaque rechargement de page dans le navigateur — c'est normal : " +
+  "ce n'est pas une expiration, le serveur MCP met à jour automatiquement le cookie quand Leclerc en renvoie un nouveau.";
+
+/** Note affichée dans les réglages / statut compte. */
+export const DATADOME_ROTATION_NOTE =
+  "Le cookie datadome est un jeton glissant : sa valeur change souvent dans Chrome, " +
+  "mais la date d'expiration reste ~1 an. Collez-le une fois après le captcha ; inutile de le recopier à chaque rechargement.";
 
 export class DataDomeBlockedError extends Error {
   constructor(message = DATADOME_HELP) {
@@ -96,8 +102,25 @@ export function mergeCookieJars(
 export function hasDatadomeCookie(
   jar: Record<string, Record<string, string>>
 ): boolean {
+  return Boolean(extractDatadomeValue(jar));
+}
+
+/** Dernière valeur datadome trouvée dans un jar (sous-domaines inclus). */
+export function extractDatadomeValue(
+  jar: Record<string, Record<string, string>>
+): string | undefined {
   for (const cookies of Object.values(jar)) {
-    if (cookies.datadome) return true;
+    if (cookies.datadome) return cookies.datadome;
   }
-  return false;
+  return undefined;
+}
+
+/** Met à jour le jar stocké si Leclerc a renvoyé un datadome plus récent. */
+export function applyDatadomeRotation(
+  stored: Record<string, Record<string, string>>,
+  latestValue: string
+): Record<string, Record<string, string>> {
+  return mergeCookieJars(stored, {
+    [DEFAULT_COOKIE_HOST]: { datadome: latestValue },
+  });
 }

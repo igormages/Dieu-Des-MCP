@@ -5,9 +5,12 @@ import {
   type LeclercCartSummary,
 } from "./parsing";
 import {
+  applyDatadomeRotation,
   DataDomeBlockedError,
   DATADOME_HELP,
+  DATADOME_ROTATION_NOTE,
   detectDataDomeBlock,
+  extractDatadomeValue,
   hasDatadomeCookie,
   mergeCookieJars,
   parseBrowserCookieImport,
@@ -245,26 +248,37 @@ export async function leclercdriveSetBrowserCookies(
 async function buildBrowserCookiesFromCredentials(
   creds: LeclercDriveCredentials
 ): Promise<Record<string, Record<string, string>>> {
-  let jar = await loadBrowserCookies(creds.username);
+  const jar = await loadBrowserCookies(creds.username);
+  if (hasDatadomeCookie(jar)) return jar;
 
   const fromSettings =
     creds.browserCookies?.trim() ||
     process.env.LECLERCDRIVE_BROWSER_COOKIES?.trim();
-  if (fromSettings) {
-    jar = mergeCookieJars(jar, parseBrowserCookieImport(fromSettings));
-  }
-
   const datadome =
     creds.datadomeCookie?.trim() || process.env.LECLERCDRIVE_DATADOME_COOKIE?.trim();
-  if (datadome) {
-    jar = mergeCookieJars(jar, parseBrowserCookieImport(datadome));
+
+  let seeded = jar;
+  if (fromSettings) {
+    seeded = mergeCookieJars(seeded, parseBrowserCookieImport(fromSettings));
+  } else if (datadome) {
+    seeded = mergeCookieJars(seeded, parseBrowserCookieImport(datadome));
   }
 
-  if (hasDatadomeCookie(jar) && (fromSettings || datadome)) {
-    await persistBrowserCookies(creds.username, jar);
+  if (hasDatadomeCookie(seeded)) {
+    await persistBrowserCookies(creds.username, seeded);
   }
+  return seeded;
+}
 
-  return jar;
+/** Persiste un datadome renvoyé par Leclerc (jeton glissant). */
+async function syncDatadomeFromJar(username: string, jar: CookieJar): Promise<void> {
+  const latest = extractDatadomeValue(jar.toJSON());
+  if (!latest) return;
+  const stored = await loadBrowserCookies(username);
+  const storedValue = extractDatadomeValue(stored);
+  if (latest !== storedValue) {
+    await persistBrowserCookies(username, applyDatadomeRotation(stored, latest));
+  }
 }
 
 function applyBrowserCookiesToJar(
@@ -472,6 +486,8 @@ async function performLogin(): Promise<SessionState> {
     }
   }
 
+  await syncDatadomeFromJar(config.username, jar);
+
   const state = await buildSession(jar);
   cachedSession = state;
   await persistSession(state);
@@ -578,6 +594,7 @@ async function leclercdriveRequest<T>(
   };
 
   const { response, finalUrl } = await fetchWithJar(jar, url, init);
+  await syncDatadomeFromJar(config.username, jar);
   const text = await response.text();
 
   if (detectDataDomeBlock(finalUrl, response.status, text, response.headers)) {
@@ -624,6 +641,7 @@ export async function leclercdriveGetConnectedUser(): Promise<Record<string, unk
     },
   });
   const text = await res.response.text();
+  await syncDatadomeFromJar(config.username, jar);
   assertNotDataDomeBlocked(res.finalUrl, res.response.status, text, res.response.headers);
   return JSON.parse(text) as Record<string, unknown>;
 }
@@ -631,11 +649,19 @@ export async function leclercdriveGetConnectedUser(): Promise<Record<string, unk
 export async function leclercdriveGetDatadomeStatus(): Promise<{
   hasDatadomeCookie: boolean;
   cookieNames: string[];
+  datadomePreview: string | null;
+  note: string;
 }> {
   const creds = await getCredentialsFromEnvOrKv();
   const jar = await buildBrowserCookiesFromCredentials(creds);
   const names = Object.values(jar).flatMap((c) => Object.keys(c));
-  return { hasDatadomeCookie: hasDatadomeCookie(jar), cookieNames: names };
+  const value = extractDatadomeValue(jar);
+  return {
+    hasDatadomeCookie: Boolean(value),
+    cookieNames: names,
+    datadomePreview: value ? `${value.slice(0, 16)}…` : null,
+    note: DATADOME_ROTATION_NOTE,
+  };
 }
 
 export async function leclercdriveSearch(query: string): Promise<string> {

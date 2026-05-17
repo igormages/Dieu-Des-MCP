@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyDatadomeRotation,
   detectDataDomeBlock,
+  extractDatadomeValue,
   hasDatadomeCookie,
   parseBrowserCookieImport,
 } from "./datadome";
@@ -28,5 +30,11 @@ describe("leclercdrive datadome", () => {
     const jar = parseBrowserCookieImport("datadome=abc; ASP.NET_SessionId=xyz");
     assert.equal(jar["leclercdrive.fr"].datadome, "abc");
     assert.equal(jar["leclercdrive.fr"]["ASP.NET_SessionId"], "xyz");
+  });
+
+  it("applique la rotation datadome sans perdre les autres cookies", () => {
+    const stored = parseBrowserCookieImport("datadome=old");
+    const rotated = applyDatadomeRotation(stored, "new-token");
+    assert.equal(extractDatadomeValue(rotated), "new-token");
   });
 });
