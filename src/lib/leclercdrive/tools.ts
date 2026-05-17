@@ -5,10 +5,12 @@ import {
   leclercdriveForceRelogin,
   leclercdriveGetCart,
   leclercdriveGetConnectedUser,
+  leclercdriveGetDatadomeStatus,
   leclercdriveGetProductZones,
   leclercdriveModifyCartQuantity,
   leclercdriveSearch,
   leclercdriveLogout,
+  leclercdriveSetBrowserCookies,
   getLeclercdrivePublicConfig,
 } from "./client";
 import {
@@ -29,9 +31,10 @@ export function registerLeclercdriveTools(server: McpServer): void {
     "Vérifie la session Leclerc Drive et retourne les infos client connecté (nom, magasin, point de livraison) ainsi que le magasin détecté automatiquement.",
     {},
     async () => {
-      const [res, config] = await Promise.all([
+      const [res, config, datadome] = await Promise.all([
         leclercdriveGetConnectedUser(),
         getLeclercdrivePublicConfig(),
+        leclercdriveGetDatadomeStatus(),
       ]);
       return jsonText({
         account: res,
@@ -42,7 +45,24 @@ export function registerLeclercdriveTools(server: McpServer): void {
           coursesHost: config.coursesHost,
           secureHost: config.secureHost,
         },
+        datadome,
       });
+    }
+  );
+
+  server.tool(
+    "leclercdrive_set_browser_cookies",
+    "Importe les cookies copiés depuis Chrome après connexion sur leclercdrive.fr (contourne le captcha DataDome). Collez la valeur du cookie datadome seule, ou toute la chaîne Cookie du navigateur.",
+    {
+      cookieString: z
+        .string()
+        .describe(
+          "Valeur du cookie datadome, ou chaîne complète « nom=valeur; nom2=valeur2 » depuis DevTools."
+        ),
+    },
+    async ({ cookieString }) => {
+      const res = await leclercdriveSetBrowserCookies(cookieString);
+      return jsonText(res);
     }
   );
 

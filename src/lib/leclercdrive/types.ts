@@ -12,6 +12,12 @@ export interface LeclercDriveConfig {
 export interface LeclercDriveCredentials {
   username: string;
   password: string;
+  /** Cookie datadome copié depuis le navigateur (contourne le captcha serveur). */
+  datadomeCookie?: string;
+  /** Export complet des cookies navigateur (chaîne ou JSON). */
+  browserCookies?: string;
+  /** URL page magasin depuis le navigateur (évite la découverte multi-silos). */
+  storeUrl?: string;
   pointLivraison?: string;
   storePath?: string;
   storeSlug?: string;

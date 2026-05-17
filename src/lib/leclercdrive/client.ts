@@ -5,6 +5,14 @@ import {
   type LeclercCartSummary,
 } from "./parsing";
 import {
+  DataDomeBlockedError,
+  DATADOME_HELP,
+  detectDataDomeBlock,
+  hasDatadomeCookie,
+  mergeCookieJars,
+  parseBrowserCookieImport,
+} from "./datadome";
+import {
   mergeStoreConfig,
   persistStoreCache,
   resolveStoreContext,
@@ -12,6 +20,7 @@ import {
 import type { LeclercDriveConfig, LeclercDriveCredentials } from "./types";
 
 const SESSION_KEY = "leclercdrive:session:default";
+const BROWSER_COOKIES_KEY_PREFIX = "leclercdrive:browser:";
 const SESSION_TTL_SECONDS = 60 * 60 * 4;
 
 const USER_AGENT =
@@ -41,6 +50,10 @@ class CookieJar {
 
   constructor(initial?: Record<string, Record<string, string>>) {
     if (initial) this.store = initial;
+  }
+
+  merge(extra: Record<string, Record<string, string>>): void {
+    this.store = mergeCookieJars(this.store, extra);
   }
 
   toJSON(): Record<string, Record<string, string>> {
@@ -170,8 +183,11 @@ async function fetchWithJar(
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) return { response, finalUrl: currentUrl };
-      const keepMethod = response.status === 307 || response.status === 308;
       const nextUrl = new URL(location, currentUrl).toString();
+      if (detectDataDomeBlock(nextUrl, response.status, "", response.headers)) {
+        throw new DataDomeBlockedError();
+      }
+      const keepMethod = response.status === 307 || response.status === 308;
       await response.text().catch(() => undefined);
       currentInit = {
         ...currentInit,
@@ -181,9 +197,94 @@ async function fetchWithJar(
       currentUrl = nextUrl;
       continue;
     }
+    const bodyPeek = await response.clone().text().catch(() => "");
+    assertNotDataDomeBlocked(currentUrl, response.status, bodyPeek, response.headers);
     return { response, finalUrl: currentUrl };
   }
   throw new Error(`Leclerc Drive : trop de redirections (>${maxRedirects}).`);
+}
+
+function browserCookiesKey(username: string): string {
+  return `${BROWSER_COOKIES_KEY_PREFIX}${username.trim().toLowerCase()}`;
+}
+
+export async function loadBrowserCookies(
+  username: string
+): Promise<Record<string, Record<string, string>>> {
+  const kv = getKvClient();
+  if (kv) {
+    const stored = await kv.get<Record<string, Record<string, string>>>(
+      browserCookiesKey(username)
+    );
+    if (stored && Object.keys(stored).length > 0) return stored;
+  }
+  return {};
+}
+
+export async function persistBrowserCookies(
+  username: string,
+  cookies: Record<string, Record<string, string>>
+): Promise<void> {
+  const kv = getKvClient();
+  if (!kv) return;
+  await kv.set(browserCookiesKey(username), cookies);
+}
+
+export async function leclercdriveSetBrowserCookies(
+  cookieString: string
+): Promise<{ saved: boolean; hasDatadome: boolean; cookieNames: string[] }> {
+  const creds = await getCredentialsFromEnvOrKv();
+  const parsed = parseBrowserCookieImport(cookieString);
+  await persistBrowserCookies(creds.username, parsed);
+  resolvedConfigCache = null;
+  cachedSession = null;
+  const names = Object.values(parsed).flatMap((c) => Object.keys(c));
+  return { saved: true, hasDatadome: hasDatadomeCookie(parsed), cookieNames: names };
+}
+
+async function buildBrowserCookiesFromCredentials(
+  creds: LeclercDriveCredentials
+): Promise<Record<string, Record<string, string>>> {
+  let jar = await loadBrowserCookies(creds.username);
+
+  const fromSettings =
+    creds.browserCookies?.trim() ||
+    process.env.LECLERCDRIVE_BROWSER_COOKIES?.trim();
+  if (fromSettings) {
+    jar = mergeCookieJars(jar, parseBrowserCookieImport(fromSettings));
+  }
+
+  const datadome =
+    creds.datadomeCookie?.trim() || process.env.LECLERCDRIVE_DATADOME_COOKIE?.trim();
+  if (datadome) {
+    jar = mergeCookieJars(jar, parseBrowserCookieImport(datadome));
+  }
+
+  if (hasDatadomeCookie(jar) && (fromSettings || datadome)) {
+    await persistBrowserCookies(creds.username, jar);
+  }
+
+  return jar;
+}
+
+function applyBrowserCookiesToJar(
+  jar: CookieJar,
+  browserCookies: Record<string, Record<string, string>>
+): void {
+  if (Object.keys(browserCookies).length > 0) {
+    jar.merge(browserCookies);
+  }
+}
+
+function assertNotDataDomeBlocked(
+  finalUrl: string,
+  status: number,
+  body: string,
+  headers: Headers
+): void {
+  if (detectDataDomeBlock(finalUrl, status, body, headers)) {
+    throw new DataDomeBlockedError();
+  }
 }
 
 async function getCredentialsFromEnvOrKv(): Promise<LeclercDriveCredentials> {
@@ -204,11 +305,30 @@ async function getCredentialsFromEnvOrKv(): Promise<LeclercDriveCredentials> {
   return {
     username,
     password,
-    pointLivraison: keys?.pointLivraison?.trim() || process.env.LECLERCDRIVE_POINT_LIVRAISON?.trim(),
-    storePath: keys?.storePath?.trim() || process.env.LECLERCDRIVE_STORE_PATH?.trim(),
-    storeSlug: keys?.storeSlug?.trim() || process.env.LECLERCDRIVE_STORE_SLUG?.trim(),
-    coursesHost: keys?.coursesHost?.trim() || process.env.LECLERCDRIVE_COURSES_HOST?.trim(),
-    secureHost: keys?.secureHost?.trim() || process.env.LECLERCDRIVE_SECURE_HOST?.trim(),
+    datadomeCookie:
+      (typeof keys?.datadomeCookie === "string" && keys.datadomeCookie.trim()) ||
+      process.env.LECLERCDRIVE_DATADOME_COOKIE?.trim(),
+    browserCookies:
+      (typeof keys?.browserCookies === "string" && keys.browserCookies.trim()) ||
+      process.env.LECLERCDRIVE_BROWSER_COOKIES?.trim(),
+    storeUrl:
+      (typeof keys?.storeUrl === "string" && keys.storeUrl.trim()) ||
+      process.env.LECLERCDRIVE_STORE_URL?.trim(),
+    pointLivraison:
+      (typeof keys?.pointLivraison === "string" && keys.pointLivraison.trim()) ||
+      process.env.LECLERCDRIVE_POINT_LIVRAISON?.trim(),
+    storePath:
+      (typeof keys?.storePath === "string" && keys.storePath.trim()) ||
+      process.env.LECLERCDRIVE_STORE_PATH?.trim(),
+    storeSlug:
+      (typeof keys?.storeSlug === "string" && keys.storeSlug.trim()) ||
+      process.env.LECLERCDRIVE_STORE_SLUG?.trim(),
+    coursesHost:
+      (typeof keys?.coursesHost === "string" && keys.coursesHost.trim()) ||
+      process.env.LECLERCDRIVE_COURSES_HOST?.trim(),
+    secureHost:
+      (typeof keys?.secureHost === "string" && keys.secureHost.trim()) ||
+      process.env.LECLERCDRIVE_SECURE_HOST?.trim(),
     eUniversContexte: keys?.eUniversContexte
       ? Number(keys.eUniversContexte)
       : process.env.LECLERCDRIVE_E_UNIVERS
@@ -221,7 +341,10 @@ export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
   if (resolvedConfigCache) return resolvedConfigCache;
 
   const creds = await getCredentialsFromEnvOrKv();
+  const browserCookies = await buildBrowserCookiesFromCredentials(creds);
   const store = await resolveStoreContext(creds.username, creds.password, {
+    storeUrl: creds.storeUrl,
+    browserCookies,
     pointLivraison: creds.pointLivraison,
     storePath: creds.storePath,
     storeSlug: creds.storeSlug,
@@ -230,7 +353,19 @@ export async function getLeclercDriveConfig(): Promise<LeclercDriveConfig> {
     eUniversContexte: creds.eUniversContexte,
   });
 
-  resolvedConfigCache = mergeStoreConfig(creds.username, creds.password, creds, store);
+  resolvedConfigCache = mergeStoreConfig(
+    creds.username,
+    creds.password,
+    {
+      pointLivraison: creds.pointLivraison,
+      storePath: creds.storePath,
+      storeSlug: creds.storeSlug,
+      coursesHost: creds.coursesHost,
+      secureHost: creds.secureHost,
+      eUniversContexte: creds.eUniversContexte,
+    },
+    store
+  );
   return resolvedConfigCache;
 }
 
@@ -260,7 +395,16 @@ async function buildSession(jar: CookieJar): Promise<SessionState> {
 
 async function performLogin(): Promise<SessionState> {
   const config = await getLeclercDriveConfig();
+  const creds = await getCredentialsFromEnvOrKv();
+  const browserCookies = await buildBrowserCookiesFromCredentials(creds);
+  if (!hasDatadomeCookie(browserCookies)) {
+    throw new DataDomeBlockedError(
+      `Connexion serveur impossible sans cookie DataDome. ${DATADOME_HELP}`
+    );
+  }
+
   const jar = new CookieJar();
+  applyBrowserCookiesToJar(jar, browserCookies);
 
   const homeUrl = `${coursesOrigin(config)}${storePagePath(config)}.aspx`;
   await fetchWithJar(jar, homeUrl, {
@@ -358,9 +502,17 @@ async function checkConnected(
 
 async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveConfig }> {
   const config = await getLeclercDriveConfig();
+  const creds = await getCredentialsFromEnvOrKv();
+  const browserCookies = await buildBrowserCookiesFromCredentials(creds);
+
+  const prepareJar = (sessionCookies: Record<string, Record<string, string>>) => {
+    const jar = new CookieJar(sessionCookies);
+    applyBrowserCookiesToJar(jar, browserCookies);
+    return jar;
+  };
 
   if (cachedSession && cachedSession.expiresAt > Date.now()) {
-    const jar = new CookieJar(cachedSession.cookies);
+    const jar = prepareJar(cachedSession.cookies);
     const ok = await checkConnected(jar, config);
     if (ok) return { jar, config };
     cachedSession = null;
@@ -369,7 +521,7 @@ async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveCo
   if (!cachedSession) {
     const fromKv = await loadSessionFromKv();
     if (fromKv) {
-      const jar = new CookieJar(fromKv.cookies);
+      const jar = prepareJar(fromKv.cookies);
       const ok = await checkConnected(jar, config);
       if (ok) {
         cachedSession = fromKv;
@@ -384,7 +536,8 @@ async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveCo
     });
   }
   const state = await inflightLogin;
-  return { jar: new CookieJar(state.cookies), config };
+  const jar = prepareJar(state.cookies);
+  return { jar, config };
 }
 
 function encodeFormD(payload: unknown): string {
@@ -424,12 +577,17 @@ async function leclercdriveRequest<T>(
         : undefined,
   };
 
-  const { response } = await fetchWithJar(jar, url, init);
+  const { response, finalUrl } = await fetchWithJar(jar, url, init);
   const text = await response.text();
+
+  if (detectDataDomeBlock(finalUrl, response.status, text, response.headers)) {
+    cachedSession = null;
+    throw new DataDomeBlockedError();
+  }
 
   if (response.status === 401 || response.status === 403) {
     cachedSession = null;
-    throw new Error(`Leclerc Drive : accès refusé (${response.status}).`);
+    throw new Error(`Leclerc Drive : accès refusé (${response.status}). ${DATADOME_HELP}`);
   }
   if (!response.ok) {
     throw new Error(
@@ -466,7 +624,18 @@ export async function leclercdriveGetConnectedUser(): Promise<Record<string, unk
     },
   });
   const text = await res.response.text();
+  assertNotDataDomeBlocked(res.finalUrl, res.response.status, text, res.response.headers);
   return JSON.parse(text) as Record<string, unknown>;
+}
+
+export async function leclercdriveGetDatadomeStatus(): Promise<{
+  hasDatadomeCookie: boolean;
+  cookieNames: string[];
+}> {
+  const creds = await getCredentialsFromEnvOrKv();
+  const jar = await buildBrowserCookiesFromCredentials(creds);
+  const names = Object.values(jar).flatMap((c) => Object.keys(c));
+  return { hasDatadomeCookie: hasDatadomeCookie(jar), cookieNames: names };
 }
 
 export async function leclercdriveSearch(query: string): Promise<string> {

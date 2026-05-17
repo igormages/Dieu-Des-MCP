@@ -277,6 +277,16 @@ export const SERVICE_DEFINITIONS: Record<
         label: "Mot de passe",
         placeholder: "votre mot de passe",
       },
+      {
+        key: "datadomeCookie",
+        label: "Cookie DataDome (navigateur)",
+        placeholder: "valeur du cookie datadome depuis DevTools",
+      },
+      {
+        key: "storeUrl",
+        label: "URL magasin (optionnel)",
+        placeholder: "https://fd9-courses.leclercdrive.fr/magasin-…-Auray.aspx",
+      },
     ],
   },
 };
@@ -407,6 +417,15 @@ function getFromEnv(service: string): ServiceConfig | null {
           : {}),
         ...(process.env.LECLERCDRIVE_SECURE_HOST
           ? { secureHost: process.env.LECLERCDRIVE_SECURE_HOST }
+          : {}),
+        ...(process.env.LECLERCDRIVE_DATADOME_COOKIE
+          ? { datadomeCookie: process.env.LECLERCDRIVE_DATADOME_COOKIE }
+          : {}),
+        ...(process.env.LECLERCDRIVE_BROWSER_COOKIES
+          ? { browserCookies: process.env.LECLERCDRIVE_BROWSER_COOKIES }
+          : {}),
+        ...(process.env.LECLERCDRIVE_STORE_URL
+          ? { storeUrl: process.env.LECLERCDRIVE_STORE_URL }
           : {}),
       };
     }

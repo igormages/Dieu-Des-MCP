@@ -1,4 +1,5 @@
 import { getKvClient } from "@/lib/keys/store";
+import { DATADOME_HELP, hasDatadomeCookie, mergeCookieJars } from "./datadome";
 import type { LeclercDriveConfig } from "./types";
 
 const STORE_CACHE_PREFIX = "leclercdrive:store:";
@@ -17,6 +18,8 @@ export interface ResolvedStoreContext {
 }
 
 export interface StoreOverrides {
+  storeUrl?: string;
+  browserCookies?: Record<string, Record<string, string>>;
   pointLivraison?: string;
   storePath?: string;
   storeSlug?: string;
@@ -106,14 +109,37 @@ function parseConnecterResponse(text: string): {
   }
 }
 
+function buildBrowserCookieHeader(
+  jar: Record<string, Record<string, string>>,
+  host: string
+): string {
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  for (const [storeHost, cookies] of Object.entries(jar)) {
+    if (host === storeHost || host.endsWith(`.${storeHost}`)) {
+      for (const [name, value] of Object.entries(cookies)) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        parts.push(`${name}=${value}`);
+      }
+    }
+  }
+  return parts.join("; ");
+}
+
 async function tryConnectOnSilo(
   silo: number,
   username: string,
-  password: string
+  password: string,
+  browserCookies?: Record<string, Record<string, string>>
 ): Promise<{ store: ResolvedStoreContext | null; cookies: Record<string, Record<string, string>> }> {
   const secureHost = `fd${silo}-secure.leclercdrive.fr`;
   const coursesHost = `fd${silo}-courses.leclercdrive.fr`;
   const origin = `https://${coursesHost}`;
+
+  let cookies: Record<string, Record<string, string>> = browserCookies
+    ? mergeCookieJars({}, browserCookies)
+    : {};
 
   const loginBody = {
     sLogin: username,
@@ -123,6 +149,7 @@ async function tryConnectOnSilo(
     eUniversContexte: 2,
   };
 
+  const cookieHeader = buildBrowserCookieHeader(cookies, secureHost);
   const res = await fetch(`https://${secureHost}/connecter.ashz`, {
     method: "POST",
     headers: {
@@ -132,11 +159,12 @@ async function tryConnectOnSilo(
       accept: "application/json, text/javascript, */*; q=0.01",
       origin,
       referer: `${origin}/`,
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
     },
     body: `d=${encodeURIComponent(JSON.stringify(loginBody))}`,
   });
 
-  const cookies = ingestResponseCookies(secureHost, res);
+  cookies = ingestResponseCookies(secureHost, res, cookies);
   const text = await res.text();
   const parsed = parseConnecterResponse(text);
   if (parsed.loginFailed) return { store: null, cookies };
@@ -269,17 +297,24 @@ function buildCookieHeader(
  */
 export async function discoverStoreByLogin(
   username: string,
-  password: string
+  password: string,
+  browserCookies?: Record<string, Record<string, string>>
 ): Promise<ResolvedStoreContext> {
+  if (!browserCookies || !hasDatadomeCookie(browserCookies)) {
+    throw new Error(
+      `Leclerc Drive : détection magasin impossible sans cookie DataDome. ${DATADOME_HELP}`
+    );
+  }
+
   for (let silo = 1; silo <= SILO_MAX; silo++) {
-    const { store } = await tryConnectOnSilo(silo, username, password);
+    const { store } = await tryConnectOnSilo(silo, username, password, browserCookies);
     if (store) {
       await persistStoreCache(username, store);
       return store;
     }
   }
   throw new Error(
-    "Leclerc Drive : impossible de détecter automatiquement votre magasin. Vérifiez vos identifiants ou renseignez manuellement pointLivraison et coursesHost dans les réglages."
+    "Leclerc Drive : impossible de détecter votre magasin. Collez l'URL de votre magasin (storeUrl) dans les réglages, ou vérifiez identifiants / cookie DataDome."
   );
 }
 
@@ -316,6 +351,14 @@ export async function resolveStoreContext(
   password: string,
   overrides: StoreOverrides
 ): Promise<ResolvedStoreContext> {
+  if (overrides.storeUrl) {
+    const fromUrl = parseStoreFromUrl(overrides.storeUrl);
+    if (fromUrl) {
+      await persistStoreCache(username, fromUrl);
+      return fromUrl;
+    }
+  }
+
   if (hasFullStoreOverrides(overrides)) {
     return {
       pointLivraison: overrides.pointLivraison!,
@@ -339,5 +382,5 @@ export async function resolveStoreContext(
     };
   }
 
-  return discoverStoreByLogin(username, password);
+  return discoverStoreByLogin(username, password, overrides.browserCookies);
 }
