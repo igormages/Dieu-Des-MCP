@@ -500,8 +500,18 @@ async function performLogin(): Promise<SessionState> {
   } catch {
   }
 
-  const compteRendu = connectJson.CompteRendu as { iCompteRendu?: number } | undefined;
+  const compteRendu = connectJson.CompteRendu as {
+    iCompteRendu?: number;
+    CompteRendu?: { sAction?: string; sMotif?: string };
+  } | undefined;
   if (compteRendu?.iCompteRendu === -1) {
+    const action = compteRendu.CompteRendu?.sAction;
+    const motif = compteRendu.CompteRendu?.sMotif;
+    if (action === "CAPTCHA" || motif === "COMPTE_NOUVEAU_TERMINAL") {
+      throw new Error(
+        "Leclerc Drive : captcha « nouveau terminal » requis. Connectez-vous une fois sur https://fd9-secure.leclercdrive.fr dans Chrome (même IP que le serveur si possible, ex. NordVPN sur le VPS), validez le captcha/email, puis réessayez."
+      );
+    }
     throw new Error(
       `Leclerc Drive : identifiants refusés. Vérifiez email/mot de passe. Réponse : ${connectText.slice(0, 300)}`
     );
@@ -868,7 +878,9 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
     configError,
     proxy: {
       configured: Boolean(getLeclercHttpProxy()),
-      hint: "LECLERCDRIVE_HTTP_PROXY=http://user:pass@host:port",
+      hint: "LECLERCDRIVE_HTTP_PROXY=http://127.0.0.1:89 (NordVPN sur le VPS : nordvpn connect puis nordvpn set proxy on)",
+      nordVpnNote:
+        "NordVPN sur le serveur Scaleway peut aider (IP moins « datacenter »), mais ce n'est pas un proxy résidentiel. Installez nordvpn sur le VPS, connectez-vous à France, puis relancez le MCP.",
     },
     probe,
     recommendations: [
