@@ -18,7 +18,11 @@ import "dotenv/config";
 import * as readline from "node:readline";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { getServiceKeys } from "../src/lib/keys/store";
-import { playwrightCookiesToJar } from "../src/lib/leclercdrive/session-harvest";
+import { persistBrowserFingerprint } from "../src/lib/leclercdrive/browser-fingerprint";
+import {
+  captureBrowserFingerprint,
+  playwrightCookiesToJar,
+} from "../src/lib/leclercdrive/session-harvest";
 import {
   persistBrowserCookies,
   persistHarvestedSession,
@@ -55,6 +59,15 @@ async function exportSession(
 
   await persistBrowserCookies(username, jar);
   await persistHarvestedSession(jar);
+
+  const pages = context.pages();
+  const leclercPage =
+    pages.find((p) => p.url().includes("leclercdrive.fr")) ?? pages[0];
+  if (leclercPage) {
+    const fingerprint = await captureBrowserFingerprint(leclercPage);
+    await persistBrowserFingerprint(username, fingerprint);
+    console.log("  User-Agent :", fingerprint.userAgent.slice(0, 72) + "…");
+  }
 
   console.log("");
   console.log("✓ Session exportée vers Redis pour", username);

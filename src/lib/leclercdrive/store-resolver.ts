@@ -6,14 +6,14 @@ import {
   spreadDatadomeToHosts,
 } from "./datadome";
 import { leclercFetch } from "./http";
+import { apiRequestHeaders, DEFAULT_LECLERC_FINGERPRINT } from "./browser-fingerprint";
 import { documentNavigationHeaders, LECLERC_PORTAL_URL } from "./navigation";
 import type { LeclercDriveConfig } from "./types";
 
 const STORE_CACHE_PREFIX = "leclercdrive:store:";
 const SILO_MAX = 15;
 
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+const API_HEADERS = apiRequestHeaders(DEFAULT_LECLERC_FINGERPRINT);
 
 export interface ResolvedStoreContext {
   pointLivraison: string;
@@ -163,10 +163,9 @@ async function tryConnectOnSilo(
   const res = await leclercFetch(`https://${secureHost}/connecter.ashz`, {
     method: "POST",
     headers: {
+      ...API_HEADERS,
       "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
       "x-requested-with": "XMLHttpRequest",
-      "user-agent": USER_AGENT,
-      accept: "application/json, text/javascript, */*; q=0.01",
       origin,
       referer: `${origin}/`,
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
@@ -187,10 +186,10 @@ async function tryConnectOnSilo(
   const estRes = await leclercFetch(`https://${secureHost}/drive/estconnecte.ashz`, {
     method: "POST",
     headers: {
+      ...API_HEADERS,
       cookie: buildCookieHeader(cookies, secureHost),
       origin,
       referer: `${origin}/`,
-      "user-agent": USER_AGENT,
     },
   });
   ingestResponseCookies(secureHost, estRes, cookies);
@@ -314,7 +313,6 @@ async function visitPortalFirst(
     method: "GET",
     headers: {
       ...documentNavigationHeaders(),
-      "user-agent": USER_AGENT,
       ...(cookieHeader ? { cookie: cookieHeader } : {}),
     },
   });

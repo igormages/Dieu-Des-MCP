@@ -20,6 +20,12 @@ import {
 } from "./datadome";
 import { getLeclercHttpProxy, leclercFetch } from "./http";
 import {
+  apiRequestHeaders,
+  clearBrowserFingerprintCache,
+  getCachedBrowserFingerprint,
+  resolveBrowserFingerprint,
+} from "./browser-fingerprint";
+import {
   documentNavigationHeaders,
   LECLERC_PORTAL_URL,
   storePageUrl,
@@ -34,18 +40,6 @@ import type { LeclercDriveConfig, LeclercDriveCredentials } from "./types";
 const SESSION_KEY = "leclercdrive:session:default";
 const BROWSER_COOKIES_KEY_PREFIX = "leclercdrive:browser:";
 const SESSION_TTL_SECONDS = 60 * 60 * 4;
-
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
-
-const COMMON_HEADERS: Record<string, string> = {
-  "user-agent": USER_AGENT,
-  "accept-language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-  accept: "application/json, text/javascript, */*; q=0.01",
-  "sec-ch-ua": '"Chromium";v="147", "Not.A/Brand";v="8"',
-  "sec-ch-ua-mobile": "?0",
-  "sec-ch-ua-platform": '"macOS"',
-};
 
 export type { LeclercDriveConfig } from "./types";
 
@@ -170,6 +164,7 @@ async function persistSession(state: SessionState): Promise<void> {
 export async function leclercdriveLogout(): Promise<void> {
   cachedSession = null;
   resolvedConfigCache = null;
+  clearBrowserFingerprintCache();
   const kv = getKvClient();
   if (kv) await kv.del(SESSION_KEY);
 }
@@ -183,7 +178,10 @@ async function fetchWithJar(
   let currentInit: RequestInit = {
     ...init,
     redirect: "manual",
-    headers: { ...COMMON_HEADERS, ...(init.headers as Record<string, string> | undefined) },
+    headers: {
+      ...apiRequestHeaders(getCachedBrowserFingerprint()),
+      ...(init.headers as Record<string, string> | undefined),
+    },
   };
   const maxRedirects = init.maxRedirects ?? 8;
   for (let i = 0; i <= maxRedirects; i++) {
@@ -595,6 +593,7 @@ async function checkConnected(
 
 async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveConfig }> {
   const config = await getLeclercDriveConfig();
+  await resolveBrowserFingerprint(config.username);
   const creds = await getCredentialsFromEnvOrKv();
   const browserCookies = await buildBrowserCookiesFromCredentials(creds, config);
 
@@ -868,9 +867,11 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
       method: "GET",
       redirect: "manual",
       headers: {
-        ...COMMON_HEADERS,
+        ...documentNavigationHeaders({
+          secFetchSite: "same-origin",
+          referer: `https://${secureHost}/`,
+        }),
         cookie: cookieHeader,
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });
     const body = await probeRes.text();
@@ -917,11 +918,15 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
       configured: Boolean(getLeclercHttpProxy()),
       hint: "LECLERCDRIVE_HTTP_PROXY=http://user:pass@host:port (proxy résidentiel, optionnel sur Vercel)",
     },
+    browserFingerprint: {
+      userAgent: getCachedBrowserFingerprint().userAgent,
+      secChUa: getCachedBrowserFingerprint().secChUa,
+    },
     harvest: {
       command: "pnpm leclercdrive:harvest",
       cdpArc:
         "/Applications/Arc.app/Contents/MacOS/Arc --remote-debugging-port=9222 puis harvest",
-      note: "Playwright seul est détecté ; mode CDP = votre Arc (même empreinte). Vercel réutilise les cookies, pas la signature TLS.",
+      note: "Harvest CDP enregistre cookies + Client Hints. TLS/IP Vercel restent différents d’Arc.",
     },
     probe,
     recommendations: [
