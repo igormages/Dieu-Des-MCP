@@ -9,11 +9,24 @@ import {
   leclercdriveDiagnose,
   leclercdriveGetConnectedUser,
 } from "../src/lib/leclercdrive/client";
+import { fetchPublicIp } from "../src/lib/leclercdrive/external-ip";
+import { wireGuardConfigExists } from "../src/lib/leclercdrive/wg-config";
+import { getLeclercHttpProxy } from "../src/lib/leclercdrive/http";
 
 async function main() {
   const cfg = await getLeclercDriveConfig();
   console.log("Compte :", cfg.username);
   console.log("Magasin :", cfg.storePath ?? cfg.coursesHost ?? "(auto)");
+
+  const publicIp = await fetchPublicIp();
+  console.log("IP publique (sortie Leclerc) :", publicIp ?? "(inconnue)");
+  if (getLeclercHttpProxy()) {
+    console.log("Proxy HTTP :", getLeclercHttpProxy());
+  } else if (wireGuardConfigExists()) {
+    console.log(
+      "VPN : fichier WG présent — utilisez pnpm leclercdrive:vpn -- probe ou activez WireGuard"
+    );
+  }
 
   const diag = await leclercdriveDiagnose();
   console.log("\n--- Diagnostic ---");

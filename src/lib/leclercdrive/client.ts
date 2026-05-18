@@ -18,7 +18,9 @@ import {
   parseBrowserCookieImport,
   spreadDatadomeToHosts,
 } from "./datadome";
+import { fetchPublicIp } from "./external-ip";
 import { getLeclercHttpProxy, leclercFetch } from "./http";
+import { wireGuardConfigExists } from "./wg-config";
 import {
   apiRequestHeaders,
   clearBrowserFingerprintCache,
@@ -914,9 +916,16 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
         }
       : null,
     configError,
+    network: {
+      publicIp: await fetchPublicIp(),
+      httpProxy: getLeclercHttpProxy() ?? null,
+      wireGuardConfigPresent: wireGuardConfigExists(),
+      wireGuardHint:
+        "En local : pnpm leclercdrive:vpn -- probe (wg-quick) ou app WireGuard. Sur Vercel : WireGuard impossible — proxy HTTP sur le serveur VPN ou MCP local.",
+    },
     proxy: {
       configured: Boolean(getLeclercHttpProxy()),
-      hint: "LECLERCDRIVE_HTTP_PROXY=http://user:pass@host:port (proxy résidentiel, optionnel sur Vercel)",
+      hint: "LECLERCDRIVE_HTTP_PROXY=http://user:pass@host:port (proxy sur 51.159.164.44 pour Vercel)",
     },
     browserFingerprint: {
       userAgent: getCachedBrowserFingerprint().userAgent,

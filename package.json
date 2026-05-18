@@ -13,7 +13,8 @@
     "leclercdrive:harvest": "tsx scripts/leclercdrive-harvest-session.ts",
     "leclercdrive:harvest:playwright": "LECLERCDRIVE_HARVEST_MODE=playwright tsx scripts/leclercdrive-harvest-session.ts",
     "leclercdrive:import-cookies": "tsx scripts/leclercdrive-import-cookies.ts",
-    "leclercdrive:probe": "tsx scripts/leclercdrive-probe.ts"
+    "leclercdrive:probe": "tsx scripts/leclercdrive-probe.ts",
+    "leclercdrive:vpn": "tsx scripts/leclercdrive-with-vpn.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.2.2",
