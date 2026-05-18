@@ -14,7 +14,8 @@
 import "dotenv/config";
 import * as fs from "node:fs";
 import { getServiceKeys } from "../src/lib/keys/store";
-import { parseBrowserCookieImport } from "../src/lib/leclercdrive/datadome";
+import { parseBrowserCookieImport, spreadDatadomeToHosts } from "../src/lib/leclercdrive/datadome";
+import { spreadRegionalSessionCookies } from "../src/lib/leclercdrive/session-harvest";
 import {
   persistBrowserCookies,
   persistHarvestedSession,
@@ -36,8 +37,13 @@ function parseNetscapeCookies(text: string): Record<string, Record<string, strin
   return jar;
 }
 
+function resolveImportArg(): string | undefined {
+  const args = process.argv.slice(2).filter((a) => a !== "--");
+  return args[args.length - 1];
+}
+
 async function main() {
-  const arg = process.argv[2];
+  const arg = resolveImportArg();
   if (!arg) {
     console.error("Usage: pnpm leclercdrive:import-cookies -- <fichier.txt|cookie-string>");
     process.exit(1);
@@ -55,9 +61,13 @@ async function main() {
     raw = fs.readFileSync(arg, "utf8");
   }
 
-  const jar = raw.includes("\t") && raw.includes("leclercdrive")
-    ? parseNetscapeCookies(raw)
-    : parseBrowserCookieImport(raw);
+  let jar =
+    raw.includes("\t") && raw.includes("leclercdrive")
+      ? parseNetscapeCookies(raw)
+      : parseBrowserCookieImport(raw);
+
+  jar = spreadRegionalSessionCookies(jar);
+  jar = spreadDatadomeToHosts(jar, Object.keys(jar));
 
   if (Object.keys(jar).length === 0) {
     console.error("Aucun cookie leclercdrive parsé.");
@@ -66,8 +76,13 @@ async function main() {
 
   await persistBrowserCookies(username, jar);
   await persistHarvestedSession(jar);
+  const hasSession = Object.values(jar).some((c) => c["ASP.NET_SessionId"]);
+  const hasDatadome = Object.values(jar).some((c) => c.datadome);
+
   console.log("✓ Cookies importés pour", username);
   console.log("  Hosts :", Object.keys(jar).join(", "));
+  console.log("  ASP.NET_SessionId :", hasSession ? "oui" : "non");
+  console.log("  datadome :", hasDatadome ? "oui" : "non");
 }
 
 main().catch((e) => {
