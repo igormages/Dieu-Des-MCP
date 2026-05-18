@@ -1,0 +1,10 @@
+services:
+  squid:
+    image: ubuntu/squid:latest
+    container_name: leclercdrive-proxy
+    restart: unless-stopped
+    ports:
+      - "3128:3128"
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+      - ./passwd:/etc/squid/passwd:ro
