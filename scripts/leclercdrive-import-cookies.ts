@@ -1,41 +1,13 @@
 /**
  * Importe des cookies exportés depuis Arc/Chrome (sans Playwright).
  *
- * Formats acceptés :
- *   - Valeur datadome seule
- *   - Chaîne "name=value; name2=value2"
- *   - Fichier JSON jar (voir leclercdrive_set_browser_cookies)
- *   - Fichier Netscape cookies.txt (extension « Get cookies.txt LOCALLY »)
- *
  * Usage:
- *   pnpm leclercdrive:import-cookies -- datadome=xxx
  *   pnpm leclercdrive:import-cookies -- cookies.txt
  */
 import "dotenv/config";
 import * as fs from "node:fs";
 import { getServiceKeys } from "../src/lib/keys/store";
-import { parseBrowserCookieImport, spreadDatadomeToHosts } from "../src/lib/leclercdrive/datadome";
-import { spreadRegionalSessionCookies } from "../src/lib/leclercdrive/session-harvest";
-import {
-  persistBrowserCookies,
-  persistHarvestedSession,
-} from "../src/lib/leclercdrive/client";
-
-function parseNetscapeCookies(text: string): Record<string, Record<string, string>> {
-  const jar: Record<string, Record<string, string>> = {};
-  for (const line of text.split("\n")) {
-    if (!line || line.startsWith("#")) continue;
-    const cols = line.split("\t");
-    if (cols.length < 7) continue;
-    const domain = cols[0].trim().replace(/^\./, "").toLowerCase();
-    const name = cols[5]?.trim();
-    const value = cols[6]?.trim();
-    if (!domain.includes("leclercdrive") || !name || !value) continue;
-    if (!jar[domain]) jar[domain] = {};
-    jar[domain][name] = value;
-  }
-  return jar;
-}
+import { importLeclercdriveCookies } from "../src/lib/leclercdrive/import-cookies-server";
 
 function resolveImportArg(): string | undefined {
   const args = process.argv.slice(2).filter((a) => a !== "--");
@@ -61,28 +33,12 @@ async function main() {
     raw = fs.readFileSync(arg, "utf8");
   }
 
-  let jar =
-    raw.includes("\t") && raw.includes("leclercdrive")
-      ? parseNetscapeCookies(raw)
-      : parseBrowserCookieImport(raw);
-
-  jar = spreadRegionalSessionCookies(jar);
-  jar = spreadDatadomeToHosts(jar, Object.keys(jar));
-
-  if (Object.keys(jar).length === 0) {
-    console.error("Aucun cookie leclercdrive parsé.");
-    process.exit(1);
-  }
-
-  await persistBrowserCookies(username, jar);
-  await persistHarvestedSession(jar);
-  const hasSession = Object.values(jar).some((c) => c["ASP.NET_SessionId"]);
-  const hasDatadome = Object.values(jar).some((c) => c.datadome);
+  const summary = await importLeclercdriveCookies(username, raw);
 
   console.log("✓ Cookies importés pour", username);
-  console.log("  Hosts :", Object.keys(jar).join(", "));
-  console.log("  ASP.NET_SessionId :", hasSession ? "oui" : "non");
-  console.log("  datadome :", hasDatadome ? "oui" : "non");
+  console.log("  Hosts :", summary.hosts.join(", "));
+  console.log("  ASP.NET_SessionId :", summary.hasAspNetSession ? "oui" : "non");
+  console.log("  datadome :", summary.hasDatadome ? "oui" : "non");
 }
 
 main().catch((e) => {

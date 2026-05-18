@@ -341,6 +341,26 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Avoirs + liaison à une facture (v2)", available: true },
     ],
   },
+  leclercdrive: {
+    url: "https://www.leclercdrive.fr/",
+    urlLabel: "Ouvrir Leclerc Drive",
+    steps: [
+      {
+        text: "Connectez-vous sur www.leclercdrive.fr (pas fd9 en direct), choisissez votre magasin.",
+      },
+      {
+        text: "Dans Arc/Chrome : extension « Get cookies.txt LOCALLY » → export pour leclercdrive.fr.",
+      },
+      {
+        text: "Dans la carte Leclerc ci-dessous : email + mot de passe, puis importez le fichier .txt (même effet que pnpm leclercdrive:import-cookies).",
+      },
+    ],
+    capabilities: [
+      { label: "Panier, recherche, compte via MCP", available: true },
+      { label: "Import cookies.txt depuis l’interface", available: true },
+      { label: "Magasin détecté automatiquement (fdN)", available: true },
+    ],
+  },
   clubigen: {
     url: "https://www.clubigen.fr",
     urlLabel: "Site Club iGen",
@@ -354,6 +374,81 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
     ],
   },
 };
+
+function LeclercdriveCookieUpload({
+  kvReady,
+  hasUsername,
+  onSuccess,
+}: {
+  kvReady: boolean;
+  hasUsername: boolean;
+  onSuccess: (text: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    setDetail(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    const res = await fetch("/api/leclercdrive/import-cookies", {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    setUploading(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Import échoué");
+      return;
+    }
+
+    const hosts = (data.hosts as string[] | undefined)?.join(", ") ?? "";
+    setDetail(
+      `Importé pour ${data.username} — ${hosts} — session: ${data.hasAspNetSession ? "oui" : "non"}, datadome: ${data.hasDatadome ? "oui" : "non"}`
+    );
+    onSuccess("Cookies Leclerc Drive importés dans Redis (Vercel partagé si même KV).");
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 px-3 py-3 space-y-2">
+      <p className="text-xs font-medium text-gray-700">Importer cookies.txt (Arc / Chrome)</p>
+      <p className="text-xs text-gray-500">
+        Fichier Netscape exporté après connexion sur le drive. Visible par le MCP sur Vercel si le même Redis.
+      </p>
+      {!hasUsername && (
+        <p className="text-xs text-amber-700">Enregistrez d’abord l’email Leclerc ci-dessus.</p>
+      )}
+      <label
+        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-50 ${!kvReady || !hasUsername || uploading ? "pointer-events-none opacity-50" : ""}`}
+      >
+        <input
+          type="file"
+          accept=".txt,text/plain"
+          className="sr-only"
+          disabled={!kvReady || !hasUsername || uploading}
+          onChange={(e) => {
+            void handleFile(e.target.files?.[0] ?? null);
+            e.target.value = "";
+          }}
+        />
+        {uploading ? "Import en cours…" : "Choisir le fichier .txt"}
+      </label>
+      {detail && (
+        <p className="text-xs text-green-700">{detail}</p>
+      )}
+      {error && (
+        <p className="text-xs text-red-700">{error}</p>
+      )}
+    </div>
+  );
+}
 
 function HelpModal({
   serviceKey,
@@ -766,6 +861,18 @@ export function SettingsForm() {
                     />
                   </div>
                 ))}
+                {serviceKey === "leclercdrive" && (
+                  <LeclercdriveCookieUpload
+                    kvReady={data.kvReady}
+                    hasUsername={
+                      Boolean(
+                        formValues.leclercdrive?.username?.trim() ||
+                          service.fields.find((f) => f.key === "username")?.hasValue
+                      )
+                    }
+                    onSuccess={(text) => showMessage("success", text)}
+                  />
+                )}
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={() => handleSave(serviceKey)}

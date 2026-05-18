@@ -1,4 +1,5 @@
 import { getServiceKeys, getKvClient } from "@/lib/keys/store";
+import { parseCookieImportRaw } from "./cookie-import";
 import {
   extractCartFromDetailPanierHtml,
   parseCartFromPanierResponse,
@@ -260,8 +261,12 @@ export async function leclercdriveSetBrowserCookies(
   cookieString: string
 ): Promise<{ saved: boolean; hasDatadome: boolean; cookieNames: string[] }> {
   const creds = await getCredentialsFromEnvOrKv();
-  const parsed = parseBrowserCookieImport(cookieString);
+  const parsed = parseCookieImportRaw(cookieString);
+  if (Object.keys(parsed).length === 0) {
+    throw new Error("Aucun cookie leclercdrive parsé.");
+  }
   await persistBrowserCookies(creds.username, parsed);
+  await persistHarvestedSession(parsed);
   resolvedConfigCache = null;
   cachedSession = null;
   const names = Object.values(parsed).flatMap((c) => Object.keys(c));
