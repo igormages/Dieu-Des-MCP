@@ -1,6 +1,16 @@
 export const BIOCOOP_ORIGIN = "https://www.biocoop.fr";
-export const BIOCOOP_LOGIN_URL = `${BIOCOOP_ORIGIN}/customer/account/login/`;
-export const BIOCOOP_LOGIN_POST_URL = `${BIOCOOP_ORIGIN}/customer/account/loginPost/`;
+
+export function biocoopStoreHomeUrl(storePath: string): string {
+  return `${BIOCOOP_ORIGIN}/${storePath}/`;
+}
+
+export function biocoopStoreLoginUrl(storePath: string): string {
+  return `${biocoopStoreHomeUrl(storePath)}customer/account/login/`;
+}
+
+export function biocoopStoreLoginPostUrl(storePath: string): string {
+  return `${biocoopStoreHomeUrl(storePath)}customer/account/loginPost/`;
+}
 
 export interface BiocoopConfig {
   storePath: string;

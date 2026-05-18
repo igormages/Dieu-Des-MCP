@@ -7,9 +7,10 @@ import {
   parseCartSection,
 } from "./parsing";
 import {
-  BIOCOOP_LOGIN_POST_URL,
-  BIOCOOP_LOGIN_URL,
   BIOCOOP_ORIGIN,
+  biocoopStoreHomeUrl,
+  biocoopStoreLoginPostUrl,
+  biocoopStoreLoginUrl,
   type BiocoopAddToCartResult,
   type BiocoopCartSummary,
   type BiocoopConfig,
@@ -156,7 +157,7 @@ export function clearBiocoopConfigCache(): void {
 }
 
 function storeBaseUrl(config: BiocoopConfig): string {
-  return `${BIOCOOP_ORIGIN}/${config.storePath}`;
+  return biocoopStoreHomeUrl(config.storePath).replace(/\/$/, "");
 }
 
 async function getCredentials(): Promise<{ username: string; password: string }> {
@@ -243,14 +244,15 @@ async function fetchWithJar(
 
 async function syncStoreContext(
   jar: CookieJar,
-  config: BiocoopConfig
+  config: BiocoopConfig,
+  referer: string
 ): Promise<string | null> {
-  const { text, finalUrl } = await fetchWithJar(jar, `${storeBaseUrl(config)}/`, {
+  const { text, finalUrl } = await fetchWithJar(jar, biocoopStoreHomeUrl(config.storePath), {
     method: "GET",
     headers: {
       accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-      referer: BIOCOOP_ORIGIN,
+      referer,
       "upgrade-insecure-requests": "1",
       "sec-fetch-dest": "document",
       "sec-fetch-mode": "navigate",
@@ -265,32 +267,38 @@ async function performLogin(): Promise<SessionState> {
   const { username, password } = await getCredentials();
   const config = await getBiocoopConfig();
   const jar = new CookieJar();
+  const loginUrl = biocoopStoreLoginUrl(config.storePath);
+  const loginPostUrl = biocoopStoreLoginPostUrl(config.storePath);
+  const storeHome = biocoopStoreHomeUrl(config.storePath);
 
-  const loginPage = await fetchWithJar(jar, BIOCOOP_LOGIN_URL, {
+  const loginPage = await fetchWithJar(jar, loginUrl, {
     method: "GET",
     headers: {
       accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      referer: storeHome,
       "upgrade-insecure-requests": "1",
       "sec-fetch-dest": "document",
       "sec-fetch-mode": "navigate",
-      "sec-fetch-site": "none",
+      "sec-fetch-site": "same-origin",
       "sec-fetch-user": "?1",
     },
   });
 
   const formKey = extractFormKey(loginPage.text);
   if (!formKey) {
-    throw new Error("Biocoop : form_key introuvable sur la page de connexion.");
+    throw new Error("Biocoop : form_key introuvable sur la page de connexion magasin.");
   }
 
   const body = new URLSearchParams({
     form_key: formKey,
     "login[username]": username,
     "login[password]": password,
+    redirect_url: storeHome,
+    send: "",
   }).toString();
 
-  const submit = await fetchWithJar(jar, BIOCOOP_LOGIN_POST_URL, {
+  const submit = await fetchWithJar(jar, loginPostUrl, {
     method: "POST",
     body,
     headers: {
@@ -298,7 +306,7 @@ async function performLogin(): Promise<SessionState> {
       accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
       origin: BIOCOOP_ORIGIN,
-      referer: BIOCOOP_LOGIN_URL,
+      referer: loginUrl,
       "upgrade-insecure-requests": "1",
       "sec-fetch-dest": "document",
       "sec-fetch-mode": "navigate",
@@ -308,7 +316,7 @@ async function performLogin(): Promise<SessionState> {
     },
   });
 
-  if (isLoginPage(submit.text, submit.finalUrl)) {
+  if (submit.response.status !== 302 && isLoginPage(submit.text, submit.finalUrl)) {
     const err =
       submit.text.match(/data-ui-id="message-error"[^>]*>[\s\S]*?<div[^>]*>([^<]+)/i)?.[1] ??
       submit.text.match(/class="message-error[^"]*"[^>]*>[\s\S]*?<div[^>]*>([^<]+)/i)?.[1];
@@ -317,7 +325,7 @@ async function performLogin(): Promise<SessionState> {
     );
   }
 
-  const storeFormKey = await syncStoreContext(jar, config);
+  const storeFormKey = await syncStoreContext(jar, config, loginUrl);
 
   const state: SessionState = {
     cookies: jar.toJSON(),
@@ -348,7 +356,7 @@ function sessionToJar(session: SessionState): CookieJar {
 async function refreshFormKey(session: SessionState, config: BiocoopConfig): Promise<string> {
   if (session.formKey) return session.formKey;
   const jar = sessionToJar(session);
-  const key = await syncStoreContext(jar, config);
+  const key = await syncStoreContext(jar, config, biocoopStoreLoginUrl(config.storePath));
   if (!key) {
     await biocoopClearSession();
     const fresh = await ensureSession();

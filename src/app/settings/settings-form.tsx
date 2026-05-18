@@ -342,8 +342,8 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
     ],
   },
   biocoop: {
-    url: "https://www.biocoop.fr/customer/account/login/",
-    urlLabel: "Connexion Biocoop",
+    url: "https://www.biocoop.fr/",
+    urlLabel: "Ouvrir Biocoop",
     steps: [
       {
         text: "Utilisez l’email et le mot de passe de votre compte Biocoop (connexion Magento classique).",

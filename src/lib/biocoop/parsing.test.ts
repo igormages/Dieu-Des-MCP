@@ -80,6 +80,42 @@ describe("biocoop parsing", () => {
     assert.equal(cart.items[0]?.product_sku, "RO2005_000");
   });
 
+  it("reproduit le loginPost magasin depuis connexion.har", () => {
+    const harPath = path.join(root, "ressources/biocoop/connexion.har");
+    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
+      log: {
+        entries: Array<{
+          request: { method: string; url: string; postData?: { text?: string } };
+          response: { status: number; headers: Array<{ name: string; value: string }> };
+        }>;
+      };
+    };
+    const post = har.log.entries.find(
+      (e) =>
+        e.request.method === "POST" &&
+        e.request.url.includes("/customer/account/loginPost/")
+    );
+    assert.ok(post);
+    assert.equal(post.response.status, 302);
+    assert.ok(
+      post.request.url.includes("/magasin-bio_golfe_luscanen/customer/account/loginPost/")
+    );
+    const location = post.response.headers.find(
+      (h) => h.name.toLowerCase() === "location"
+    )?.value;
+    assert.equal(location, "https://www.biocoop.fr/magasin-bio_golfe_luscanen/");
+
+    const params = new URLSearchParams(post.request.postData?.text ?? "");
+    assert.ok(params.get("form_key"));
+    assert.ok(params.get("login[username]"));
+    assert.ok(params.get("login[password]"));
+    assert.equal(
+      params.get("redirect_url"),
+      "https://www.biocoop.fr/magasin-bio_golfe_luscanen/"
+    );
+    assert.equal(params.get("send"), "");
+  });
+
   it("extrait les produits associés depuis recommender/ajax", () => {
     const harPath = path.join(
       root,
