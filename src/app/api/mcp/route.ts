@@ -17,6 +17,7 @@ import { registerElevenLabsTools } from "@/lib/elevenlabs/tools";
 import { registerClubigenTools } from "@/lib/clubigen/tools";
 import { registerCookidooTools } from "@/lib/cookidoo/tools";
 import { registerLeclercdriveTools } from "@/lib/leclercdrive/tools";
+import { registerBiocoopTools } from "@/lib/biocoop/tools";
 import { registerCoditVentePresTools } from "@/lib/codit-ventepres/tools";
 import { registerPennylaneCoditTools } from "@/lib/pennylane-codit/tools";
 import { verifyBearerToken } from "@/lib/auth/verify";
@@ -41,6 +42,7 @@ const handler = createMcpHandler(
     registerClubigenTools(server);
     registerCookidooTools(server);
     registerLeclercdriveTools(server);
+    registerBiocoopTools(server);
     registerPennylaneCoditTools(server);
     registerCoditVentePresTools(server);
   },

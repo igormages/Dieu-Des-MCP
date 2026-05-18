@@ -265,6 +265,22 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  biocoop: {
+    label: "Biocoop",
+    fields: [
+      {
+        key: "storePath",
+        label: "Chemin magasin (slug URL)",
+        placeholder: "magasin-bio_golfe_luscanen",
+      },
+      {
+        key: "browserCookies",
+        label: "Cookies navigateur (optionnel si import fichier)",
+        placeholder: "PHPSESSID=…; form_key=…",
+        required: false,
+      },
+    ],
+  },
   leclercdrive: {
     label: "Leclerc Drive",
     fields: [
@@ -404,6 +420,16 @@ function getFromEnv(service: string): ServiceConfig | null {
       const username = process.env.COOKIDOO_USERNAME;
       const password = process.env.COOKIDOO_PASSWORD;
       return username && password ? { username, password } : null;
+    }
+    case "biocoop": {
+      const storePath = process.env.BIOCOOP_STORE_PATH;
+      if (!storePath?.trim()) return null;
+      return {
+        storePath: storePath.trim(),
+        ...(process.env.BIOCOOP_BROWSER_COOKIES
+          ? { browserCookies: process.env.BIOCOOP_BROWSER_COOKIES }
+          : {}),
+      };
     }
     case "leclercdrive": {
       const username = process.env.LECLERCDRIVE_USERNAME;

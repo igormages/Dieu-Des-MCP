@@ -341,6 +341,26 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
       { label: "Avoirs + liaison à une facture (v2)", available: true },
     ],
   },
+  biocoop: {
+    url: "https://www.biocoop.fr/",
+    urlLabel: "Ouvrir Biocoop",
+    steps: [
+      {
+        text: "Sur biocoop.fr, choisissez votre magasin (l’URL contient le slug, ex. magasin-bio_golfe_luscanen).",
+      },
+      {
+        text: "Copiez ce segment d’URL dans « Chemin magasin » (sans slash au début).",
+      },
+      {
+        text: "Dans Chrome/Arc : extension « Get cookies.txt LOCALLY » → export pour biocoop.fr, puis import ci-dessous.",
+      },
+    ],
+    capabilities: [
+      { label: "Recherche produits (catalogsearch)", available: true },
+      { label: "Panier, ajout et mise à jour quantités", available: true },
+      { label: "Import cookies.txt depuis l’interface", available: true },
+    ],
+  },
   leclercdrive: {
     url: "https://www.leclercdrive.fr/",
     urlLabel: "Ouvrir Leclerc Drive",
@@ -374,6 +394,77 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
     ],
   },
 };
+
+function BiocoopCookieUpload({
+  kvReady,
+  hasStorePath,
+  onSuccess,
+}: {
+  kvReady: boolean;
+  hasStorePath: boolean;
+  onSuccess: (text: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFile(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    setDetail(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    const res = await fetch("/api/biocoop/import-cookies", {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    setUploading(false);
+
+    if (!res.ok) {
+      setError(data.error ?? "Import échoué");
+      return;
+    }
+
+    const hosts = (data.hosts as string[] | undefined)?.join(", ") ?? "";
+    setDetail(
+      `Magasin ${data.storePath} — ${hosts} — PHPSESSID: ${data.hasPhpSession ? "oui" : "non"}, form_key: ${data.hasFormKey ? "oui" : "non"}`
+    );
+    onSuccess("Cookies Biocoop importés dans Redis.");
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 px-3 py-3 space-y-2">
+      <p className="text-xs font-medium text-gray-700">Importer cookies.txt (Arc / Chrome)</p>
+      <p className="text-xs text-gray-500">
+        Exportez après avoir ouvert votre magasin sur biocoop.fr (panier invité ou compte connecté).
+      </p>
+      {!hasStorePath && (
+        <p className="text-xs text-amber-700">Enregistrez d’abord le chemin magasin ci-dessus.</p>
+      )}
+      <label
+        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-50 ${!kvReady || !hasStorePath || uploading ? "pointer-events-none opacity-50" : ""}`}
+      >
+        <input
+          type="file"
+          accept=".txt,text/plain"
+          className="sr-only"
+          disabled={!kvReady || !hasStorePath || uploading}
+          onChange={(e) => {
+            void handleFile(e.target.files?.[0] ?? null);
+            e.target.value = "";
+          }}
+        />
+        {uploading ? "Import en cours…" : "Choisir le fichier .txt"}
+      </label>
+      {detail && <p className="text-xs text-green-700">{detail}</p>}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+    </div>
+  );
+}
 
 function LeclercdriveCookieUpload({
   kvReady,
@@ -901,6 +992,18 @@ export function SettingsForm() {
                     />
                   </div>
                 ))}
+                {serviceKey === "biocoop" && (
+                  <BiocoopCookieUpload
+                    kvReady={data.kvReady}
+                    hasStorePath={
+                      Boolean(
+                        formValues.biocoop?.storePath?.trim() ||
+                          service.fields.find((f) => f.key === "storePath")?.hasValue
+                      )
+                    }
+                    onSuccess={(text) => showMessage("success", text)}
+                  />
+                )}
                 {serviceKey === "leclercdrive" && (
                   <LeclercdriveCookieUpload
                     kvReady={data.kvReady}
