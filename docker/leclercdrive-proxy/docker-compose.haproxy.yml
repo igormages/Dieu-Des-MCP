@@ -1,0 +1,9 @@
+services:
+  haproxy-443:
+    image: haproxy:3.0-alpine
+    container_name: leclercdrive-haproxy-443
+    restart: unless-stopped
+    network_mode: host
+    user: "0:0"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro

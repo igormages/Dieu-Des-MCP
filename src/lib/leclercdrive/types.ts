@@ -18,7 +18,7 @@ export interface LeclercDriveCredentials {
   browserCookies?: string;
   /** URL page magasin depuis le navigateur (évite la découverte multi-silos). */
   storeUrl?: string;
-  /** Proxy HTTP sortant (ex. http://user:pass@51.159.164.44:3128), prioritaire sur l’env. */
+  /** Proxy HTTP sortant (ex. http://user:pass@51.159.164.44:443), prioritaire sur l’env. */
   httpProxy?: string;
   pointLivraison?: string;
   storePath?: string;

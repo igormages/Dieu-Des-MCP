@@ -148,8 +148,8 @@ export async function probeLeclercHttpProxy(): Promise<LeclercProxyProbeResult> 
       latencyMs: Date.now() - start,
       error: cause || msg,
       hint: isFetchFailed
-        ? "Vercel n’atteint pas le port 3128 : ouvrez TCP 3128 sur le pare-feu Scaleway (toutes sources ou plages Vercel), ou exposez le proxy en HTTPS sur le port 443 (Traefik)."
-        : "Vérifiez l’URL proxy dans /settings (http://user:pass@host:3128).",
+        ? "Connexion proxy impossible (timeout). Utilisez le port 443 : http://user:pass@51.159.164.44:443 (Vercel bloque souvent le 3128)."
+        : "Vérifiez l’URL proxy dans /settings (http://user:pass@IP:443).",
     };
   }
 }

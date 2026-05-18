@@ -293,7 +293,7 @@ export const SERVICE_DEFINITIONS: Record<
       {
         key: "httpProxy",
         label: "URL proxy HTTP (Vercel → VPS)",
-        placeholder: "http://leclercdrive:motdepasse@51.159.164.44:3128",
+        placeholder: "http://leclercdrive:motdepasse@51.159.164.44:443",
         required: false,
       },
     ],
