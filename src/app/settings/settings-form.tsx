@@ -352,7 +352,7 @@ const SERVICE_HELP: Record<string, HelpInfo> = {
         text: "Dans Arc/Chrome : extension « Get cookies.txt LOCALLY » → export pour leclercdrive.fr.",
       },
       {
-        text: "Dans la carte Leclerc ci-dessous : email + mot de passe, puis importez le fichier .txt (même effet que pnpm leclercdrive:import-cookies).",
+        text: "Dans la carte Leclerc : email, mot de passe, URL proxy HTTP (VPS), puis import cookies.txt.",
       },
     ],
     capabilities: [
@@ -397,12 +397,12 @@ function LeclercdriveCookieUpload({
     const data = await res.json();
     setProxyTesting(false);
     if (!data.configured) {
-      setProxyResult("LECLERCDRIVE_HTTP_PROXY non défini sur ce déploiement.");
+      setProxyResult("Aucun proxy configuré (champ URL proxy ou variable d’environnement).");
       return;
     }
     if (data.ok) {
       setProxyResult(
-        `Proxy OK (${data.latencyMs} ms, HTTP ${data.httpStatus ?? "?"}) — ${data.proxyPreview}`
+        `Proxy OK (${data.latencyMs} ms, HTTP ${data.httpStatus ?? "?"}, source ${data.source ?? "?"}) — ${data.proxyPreview}`
       );
       return;
     }
@@ -444,9 +444,7 @@ function LeclercdriveCookieUpload({
         Fichier Netscape exporté après connexion sur le drive. Visible par le MCP sur Vercel si le même Redis.
       </p>
       <p className="text-xs text-gray-500">
-        Sur Vercel : variable{" "}
-        <code className="rounded bg-gray-100 px-1 font-mono text-[10px]">LECLERCDRIVE_HTTP_PROXY</code>{" "}
-        (http://user:pass@51.159.164.44:3128), puis redéploiement.
+        Renseignez l’URL proxy dans le champ ci-dessus (prioritaire sur la variable d’environnement), puis « Enregistrer » et « Tester le proxy ».
       </p>
       <button
         type="button"
@@ -888,7 +886,10 @@ export function SettingsForm() {
                     </label>
                     <input
                       type={
-                        field.key === "password" || field.key === "secretKey" || field.key.endsWith("Token")
+                        field.key === "password" ||
+                        field.key === "secretKey" ||
+                        field.key === "httpProxy" ||
+                        field.key.endsWith("Token")
                           ? "password"
                           : "text"
                       }

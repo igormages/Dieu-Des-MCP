@@ -1,12 +1,15 @@
 import type { Dispatcher } from "undici";
+import { getServiceKeys } from "@/lib/keys/store";
 
 let proxyDispatcher: Dispatcher | undefined;
+/** undefined = pas encore résolu ; null = pas de proxy */
+let cachedProxyUrl: string | null | undefined;
 
-/** Proxy HTTP optionnel (VPS Cod'iT / résidentiel). */
-export function getLeclercHttpProxy(): string | undefined {
-  const raw = process.env.LECLERCDRIVE_HTTP_PROXY?.trim();
-  if (!raw) return undefined;
-  const cleaned = raw.replace(/^["']|["']$/g, "");
+export function normalizeLeclercHttpProxyUrl(
+  raw: string | undefined
+): string | undefined {
+  if (!raw?.trim()) return undefined;
+  const cleaned = raw.trim().replace(/^["']|["']$/g, "");
   try {
     const u = new URL(cleaned);
     if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
@@ -16,27 +19,60 @@ export function getLeclercHttpProxy(): string | undefined {
   }
 }
 
-/** URL masquée pour logs / diagnostic. */
-export function getLeclercHttpProxyForLogs(): string | null {
-  const proxy = getLeclercHttpProxy();
-  if (!proxy) return null;
+export function maskHttpProxyUrl(url: string): string {
   try {
-    const u = new URL(proxy);
-    const auth = u.username
-      ? `${encodeURIComponent(u.username)}:***@`
-      : "";
-    const port = u.port || (u.protocol === "https:" ? "443" : "80");
-    return `${u.protocol}//${auth}${u.hostname}:${port}`;
+    const u = new URL(url);
+    if (u.password) u.password = "••••••••";
+    return u.toString();
   } catch {
-    return "(LECLERCDRIVE_HTTP_PROXY invalide)";
+    if (url.length <= 12) return "••••••••";
+    return `${url.slice(0, 8)}…${url.slice(-6)}`;
   }
+}
+
+/** Proxy : KV (/settings) prioritaire, puis LECLERCDRIVE_HTTP_PROXY. */
+export async function resolveLeclercHttpProxy(): Promise<string | undefined> {
+  if (cachedProxyUrl !== undefined) {
+    return cachedProxyUrl ?? undefined;
+  }
+
+  const keys = await getServiceKeys("leclercdrive");
+  const fromKv = normalizeLeclercHttpProxyUrl(
+    typeof keys?.httpProxy === "string" ? keys.httpProxy : undefined
+  );
+  if (fromKv) {
+    cachedProxyUrl = fromKv;
+    return fromKv;
+  }
+
+  const fromEnv = normalizeLeclercHttpProxyUrl(process.env.LECLERCDRIVE_HTTP_PROXY);
+  cachedProxyUrl = fromEnv ?? null;
+  return fromEnv;
+}
+
+export function clearLeclercHttpProxyCache(): void {
+  cachedProxyUrl = undefined;
+  proxyDispatcher = undefined;
+}
+
+/** @deprecated Préférer resolveLeclercHttpProxy() après ensureSession. */
+export function getLeclercHttpProxy(): string | undefined {
+  if (cachedProxyUrl !== undefined) return cachedProxyUrl ?? undefined;
+  return normalizeLeclercHttpProxyUrl(process.env.LECLERCDRIVE_HTTP_PROXY);
+}
+
+/** URL masquée pour logs / diagnostic. */
+export function getLeclercHttpProxyForLogs(proxy?: string): string | null {
+  const p = proxy ?? getLeclercHttpProxy();
+  if (!p) return null;
+  return maskHttpProxyUrl(p);
 }
 
 async function createProxyDispatcher(proxyUrl: string): Promise<Dispatcher> {
   const { ProxyAgent } = await import("undici");
   return new ProxyAgent({
     uri: proxyUrl,
-    connect: { timeout: 20_000 },
+    connect: { timeout: 25_000 },
     bodyTimeout: 120_000,
     headersTimeout: 45_000,
   });
@@ -45,6 +81,7 @@ async function createProxyDispatcher(proxyUrl: string): Promise<Dispatcher> {
 export interface LeclercProxyProbeResult {
   configured: boolean;
   proxyPreview: string | null;
+  source?: "kv" | "env";
   ok: boolean;
   latencyMs?: number;
   httpStatus?: number;
@@ -52,14 +89,22 @@ export interface LeclercProxyProbeResult {
   hint?: string;
 }
 
-/** Teste la connectivité proxy → Leclerc (à appeler depuis le même runtime que le MCP). */
+/** Teste la connectivité proxy → Leclerc (même runtime que le MCP / settings). */
 export async function probeLeclercHttpProxy(): Promise<LeclercProxyProbeResult> {
-  const proxy = getLeclercHttpProxy();
+  const keys = await getServiceKeys("leclercdrive");
+  const fromKv = normalizeLeclercHttpProxyUrl(
+    typeof keys?.httpProxy === "string" ? keys.httpProxy : undefined
+  );
+  const fromEnv = normalizeLeclercHttpProxyUrl(process.env.LECLERCDRIVE_HTTP_PROXY);
+  const proxy = fromKv ?? fromEnv;
+  const source = fromKv ? "kv" : fromEnv ? "env" : undefined;
+
   if (!proxy) {
     return { configured: false, proxyPreview: null, ok: true };
   }
 
-  const preview = getLeclercHttpProxyForLogs();
+  cachedProxyUrl = proxy;
+  const preview = maskHttpProxyUrl(proxy);
   const start = Date.now();
 
   try {
@@ -68,7 +113,7 @@ export async function probeLeclercHttpProxy(): Promise<LeclercProxyProbeResult> 
       method: "GET",
       redirect: "manual",
       dispatcher,
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(35_000),
       headers: { "user-agent": "Mozilla/5.0 (compatible; dieudesmcp-proxy-probe/1.0)" },
     } as RequestInit);
     await res.text().catch(() => undefined);
@@ -76,6 +121,7 @@ export async function probeLeclercHttpProxy(): Promise<LeclercProxyProbeResult> 
     return {
       configured: true,
       proxyPreview: preview,
+      source,
       ok: true,
       latencyMs: Date.now() - start,
       httpStatus: res.status,
@@ -90,23 +136,25 @@ export async function probeLeclercHttpProxy(): Promise<LeclercProxyProbeResult> 
       e instanceof Error && e.cause instanceof Error ? e.cause.message : "";
 
     const isFetchFailed =
-      msg.includes("fetch failed") || cause.includes("fetch failed");
+      msg.includes("fetch failed") ||
+      cause.includes("fetch failed") ||
+      cause.includes("Connect Timeout");
 
     return {
       configured: true,
       proxyPreview: preview,
+      source,
       ok: false,
       latencyMs: Date.now() - start,
       error: cause || msg,
       hint: isFetchFailed
-        ? "Depuis ce serveur (Vercel), le proxy est injoignable : vérifiez l’URL (http://user:pass@51.159.164.44:3128), le mot de passe URL-encodé si caractères spéciaux, et le pare-feu Scaleway (TCP 3128 entrant). Le conteneur Squid sur le VPS peut être UP tout de même."
-        : "Vérifiez LECLERCDRIVE_HTTP_PROXY et redéployez après modification.",
+        ? "Vercel n’atteint pas le port 3128 : ouvrez TCP 3128 sur le pare-feu Scaleway (toutes sources ou plages Vercel), ou exposez le proxy en HTTPS sur le port 443 (Traefik)."
+        : "Vérifiez l’URL proxy dans /settings (http://user:pass@host:3128).",
     };
   }
 }
 
-function formatProxyNetworkError(e: unknown): Error {
-  const proxy = getLeclercHttpProxyForLogs();
+function formatProxyNetworkError(e: unknown, proxy: string | null): Error {
   const base = e instanceof Error ? e : new Error(String(e));
   const cause =
     base.cause instanceof Error
@@ -118,7 +166,7 @@ function formatProxyNetworkError(e: unknown): Error {
   const detail = cause || base.message;
   return new Error(
     `Réseau Leclerc Drive (proxy ${proxy ?? "?"}): ${detail}. ` +
-      "Vérifiez que Squid tourne sur le VPS, que le port 3128 est ouvert, et lancez leclercdrive_diagnose.",
+      "Réglages → Leclerc → Tester le proxy, ou leclercdrive_diagnose.",
     { cause: base }
   );
 }
@@ -127,7 +175,7 @@ export async function leclercFetch(
   url: string,
   init?: RequestInit
 ): Promise<Response> {
-  const proxy = getLeclercHttpProxy();
+  const proxy = await resolveLeclercHttpProxy();
   if (!proxy) return fetch(url, init);
 
   try {
@@ -140,6 +188,6 @@ export async function leclercFetch(
     } as RequestInit);
   } catch (e) {
     proxyDispatcher = undefined;
-    throw formatProxyNetworkError(e);
+    throw formatProxyNetworkError(e, getLeclercHttpProxyForLogs(proxy));
   }
 }

@@ -4,6 +4,7 @@ import {
   type CookieImportSummary,
 } from "./cookie-import";
 import { persistBrowserCookies, persistHarvestedSession } from "./client";
+import { clearLeclercHttpProxyCache } from "./http";
 
 export async function importLeclercdriveCookies(
   username: string,
@@ -18,5 +19,6 @@ export async function importLeclercdriveCookies(
 
   await persistBrowserCookies(username, jar);
   await persistHarvestedSession(jar);
+  clearLeclercHttpProxyCache();
   return summarizeCookieJar(jar);
 }

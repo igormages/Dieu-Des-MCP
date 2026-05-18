@@ -290,6 +290,12 @@ export const SERVICE_DEFINITIONS: Record<
         placeholder: "URL fd9-courses… obtenue après connexion sur www.leclercdrive.fr",
         required: false,
       },
+      {
+        key: "httpProxy",
+        label: "URL proxy HTTP (Vercel → VPS)",
+        placeholder: "http://leclercdrive:motdepasse@51.159.164.44:3128",
+        required: false,
+      },
     ],
   },
 };
@@ -429,6 +435,9 @@ function getFromEnv(service: string): ServiceConfig | null {
           : {}),
         ...(process.env.LECLERCDRIVE_STORE_URL
           ? { storeUrl: process.env.LECLERCDRIVE_STORE_URL }
+          : {}),
+        ...(process.env.LECLERCDRIVE_HTTP_PROXY
+          ? { httpProxy: process.env.LECLERCDRIVE_HTTP_PROXY }
           : {}),
       };
     }

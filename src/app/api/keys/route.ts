@@ -8,6 +8,7 @@ import {
   isKvConfigured,
   SERVICE_DEFINITIONS,
 } from "@/lib/keys/store";
+import { maskHttpProxyUrl } from "@/lib/leclercdrive/http";
 
 function maskValue(value: string): string {
   if (value.length <= 8) return "••••••••";
@@ -54,7 +55,11 @@ export async function GET() {
         ...f,
         required: f.required !== false,
         hasValue: Boolean(keys?.[f.key]?.trim()),
-        maskedValue: keys?.[f.key] ? maskValue(keys[f.key]) : null,
+        maskedValue: keys?.[f.key]
+          ? f.key === "httpProxy"
+            ? maskHttpProxyUrl(keys[f.key])
+            : maskValue(keys[f.key])
+          : null,
       })),
     };
   }
@@ -114,6 +119,10 @@ export async function PUT(request: Request) {
   }
 
   await setServiceKeys(service, merged);
+  if (service === "leclercdrive") {
+    const { clearLeclercHttpProxyCache } = await import("@/lib/leclercdrive/http");
+    clearLeclercHttpProxyCache();
+  }
   return NextResponse.json({ success: true });
 }
 

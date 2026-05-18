@@ -21,10 +21,11 @@ import {
 } from "./datadome";
 import { fetchPublicIp } from "./external-ip";
 import {
-  getLeclercHttpProxy,
+  clearLeclercHttpProxyCache,
   getLeclercHttpProxyForLogs,
   leclercFetch,
   probeLeclercHttpProxy,
+  resolveLeclercHttpProxy,
 } from "./http";
 import { wireGuardConfigExists } from "./wg-config";
 import {
@@ -424,6 +425,9 @@ async function getCredentialsFromEnvOrKv(): Promise<LeclercDriveCredentials> {
       : process.env.LECLERCDRIVE_E_UNIVERS
         ? Number(process.env.LECLERCDRIVE_E_UNIVERS)
         : undefined,
+    httpProxy:
+      (typeof keys?.httpProxy === "string" && keys.httpProxy.trim()) ||
+      process.env.LECLERCDRIVE_HTTP_PROXY?.trim(),
   };
 }
 
@@ -605,6 +609,7 @@ async function checkConnected(
 
 async function ensureSession(): Promise<{ jar: CookieJar; config: LeclercDriveConfig }> {
   const config = await getLeclercDriveConfig();
+  await resolveLeclercHttpProxy();
   await resolveBrowserFingerprint(config.username);
   const creds = await getCredentialsFromEnvOrKv();
   const browserCookies = await buildBrowserCookiesFromCredentials(creds, config);
@@ -928,15 +933,15 @@ export async function leclercdriveDiagnose(): Promise<Record<string, unknown>> {
     configError,
     network: {
       publicIp: await fetchPublicIp(),
-      httpProxy: getLeclercHttpProxyForLogs(),
+      httpProxy: getLeclercHttpProxyForLogs(await resolveLeclercHttpProxy()),
       proxyProbe: await probeLeclercHttpProxy(),
       wireGuardConfigPresent: wireGuardConfigExists(),
       wireGuardHint:
         "En local : pnpm leclercdrive:vpn -- probe (wg-quick) ou app WireGuard. Sur Vercel : WireGuard impossible — proxy HTTP sur le serveur VPN ou MCP local.",
     },
     proxy: {
-      configured: Boolean(getLeclercHttpProxy()),
-      hint: "LECLERCDRIVE_HTTP_PROXY=http://leclercdrive:MOT_DE_PASSE@51.159.164.44:3128 — sans guillemets, redéployer après changement.",
+      configured: Boolean(await resolveLeclercHttpProxy()),
+      hint: "URL proxy dans /settings (Leclerc Drive) ou LECLERCDRIVE_HTTP_PROXY — KV prioritaire.",
     },
     browserFingerprint: {
       userAgent: getCachedBrowserFingerprint().userAgent,
