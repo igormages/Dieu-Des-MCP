@@ -13,25 +13,37 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "../../..");
 
+function readHar(relativePath: string): unknown | null {
+  const harPath = path.join(root, relativePath);
+  if (!fs.existsSync(harPath)) return null;
+  return JSON.parse(fs.readFileSync(harPath, "utf8"));
+}
+
 function decodeMagentoUenc(uenc: string): string {
   const b64 = uenc.replace(/~/g, "=").replace(/-/g, "+").replace(/_/g, "/");
   return Buffer.from(b64, "base64").toString("utf8");
 }
 
-describe("biocoop parsing", () => {
-  it("extrait form_key et uenc depuis le HAR produit", () => {
-    const harPath = path.join(
-      root,
-      "ressources/biocoop/recherche produit + ajout pannier.har"
-    );
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { url: string };
-          response: { content?: { text?: string } };
-        }>;
+type HarFile = {
+  log: {
+    entries: Array<{
+      request: { method?: string; url: string; postData?: { text?: string } };
+      response: {
+        status?: number;
+        headers?: Array<{ name: string; value: string }>;
+        content?: { text?: string };
       };
-    };
+    }>;
+  };
+};
+
+describe("biocoop parsing", () => {
+  it("extrait form_key et uenc depuis le HAR produit", (t) => {
+    const har = readHar("ressources/biocoop/recherche produit + ajout pannier.har") as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const page = har.log.entries.find((e) =>
       e.request.url.includes("viande-boeuf-sechee")
     );
@@ -53,19 +65,12 @@ describe("biocoop parsing", () => {
     );
   });
 
-  it("parse le panier customer/section/load du HAR", () => {
-    const harPath = path.join(
-      root,
-      "ressources/biocoop/recherche produit + ajout pannier.har"
-    );
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { url: string };
-          response: { content?: { text?: string } };
-        }>;
-      };
-    };
+  it("parse le panier customer/section/load du HAR", (t) => {
+    const har = readHar("ressources/biocoop/recherche produit + ajout pannier.har") as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const entry = har.log.entries.find(
       (e) =>
         e.request.url.includes("customer/section/load") &&
@@ -80,16 +85,12 @@ describe("biocoop parsing", () => {
     assert.equal(cart.items[0]?.product_sku, "RO2005_000");
   });
 
-  it("reproduit le loginPost magasin depuis connexion.har", () => {
-    const harPath = path.join(root, "ressources/biocoop/connexion.har");
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { method: string; url: string; postData?: { text?: string } };
-          response: { status: number; headers: Array<{ name: string; value: string }> };
-        }>;
-      };
-    };
+  it("reproduit le loginPost magasin depuis connexion.har", (t) => {
+    const har = readHar("ressources/biocoop/connexion.har") as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const post = har.log.entries.find(
       (e) =>
         e.request.method === "POST" &&
@@ -100,7 +101,7 @@ describe("biocoop parsing", () => {
     assert.ok(
       post.request.url.includes("/magasin-bio_golfe_luscanen/customer/account/loginPost/")
     );
-    const location = post.response.headers.find(
+    const location = post.response.headers?.find(
       (h) => h.name.toLowerCase() === "location"
     )?.value;
     assert.equal(location, "https://www.biocoop.fr/magasin-bio_golfe_luscanen/");
@@ -116,19 +117,12 @@ describe("biocoop parsing", () => {
     assert.equal(params.get("send"), "");
   });
 
-  it("extrait les produits associés depuis recommender/ajax", () => {
-    const harPath = path.join(
-      root,
-      "ressources/biocoop/recherche produit + ajout pannier.har"
-    );
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { url: string };
-          response: { content?: { text?: string } };
-        }>;
-      };
-    };
+  it("extrait les produits associés depuis recommender/ajax", (t) => {
+    const har = readHar("ressources/biocoop/recherche produit + ajout pannier.har") as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const entry = har.log.entries.find((e) =>
       e.request.url.includes("recommender/ajax")
     );

@@ -11,20 +11,30 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "../../..");
 
+function readHar(relativePath: string): unknown | null {
+  const harPath = path.join(root, relativePath);
+  if (!fs.existsSync(harPath)) return null;
+  return JSON.parse(fs.readFileSync(harPath, "utf8"));
+}
+
+type HarFile = {
+  log: {
+    entries: Array<{
+      request: { url: string };
+      response: { content?: { text?: string } };
+    }>;
+  };
+};
+
 describe("leclercdrive parsing", () => {
-  it("extrait le panier depuis detail-panier HAR", () => {
-    const harPath = path.join(
-      root,
+  it("extrait le panier depuis detail-panier HAR", (t) => {
+    const har = readHar(
       "ressources/leclercdrive/voir pannier - récupérer pannier.har"
-    );
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { url: string };
-          response: { content?: { text?: string } };
-        }>;
-      };
-    };
+    ) as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const entry = har.log.entries.find((e) =>
       e.request.url.includes("detail-panier.aspx")
     );
@@ -36,19 +46,14 @@ describe("leclercdrive parsing", () => {
     assert.equal(cart.lstProduitsLight[0]?.iIdProduit, 120488);
   });
 
-  it("parse fiche-produit-zones HAR", () => {
-    const harPath = path.join(
-      root,
+  it("parse fiche-produit-zones HAR", (t) => {
+    const har = readHar(
       "ressources/leclercdrive/recherche - ajout pannier- augmentation des qte.har"
-    );
-    const har = JSON.parse(fs.readFileSync(harPath, "utf8")) as {
-      log: {
-        entries: Array<{
-          request: { url: string };
-          response: { content?: { text?: string } };
-        }>;
-      };
-    };
+    ) as HarFile | null;
+    if (!har) {
+      t.skip("HAR local absent (dossier ressources/ non versionné)");
+      return;
+    }
     const entry = har.log.entries.find((e) =>
       e.request.url.includes("fiche-produit-zones.ashz")
     );

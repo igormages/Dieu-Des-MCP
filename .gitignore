@@ -29,10 +29,9 @@ yarn-error.log*
 .env
 .env*.local
 
-# WireGuard / VPN (clés privées — ne jamais versionner)
-ressources/**/*.conf
-ressources/**/Cod*.conf
-ressources/**/*.zip
+# Captures HAR, configs VPN, exports locaux (ne jamais versionner)
+/ressources/
+
 *.wg.conf
 
 # vercel

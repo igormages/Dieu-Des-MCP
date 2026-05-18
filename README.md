@@ -111,7 +111,7 @@ Client MCP (Cursor, etc.)
 > **Usage prévu : instance personnelle ou équipe de confiance**, pas un SaaS multi-tenant public.
 
 1. **Ne jamais committer** `.env`, cookies, captures HAR avec session, configs WireGuard (déjà dans `.gitignore`).
-2. Les fichiers `ressources/**/*.har` servent au reverse-engineering local ; **ne les publiez pas** s’ils contiennent des cookies de session réels.
+2. Le dossier `ressources/` (HAR, configs VPN) est **gitignoré** : gardez-le en local uniquement, jamais dans git.
 3. Le endpoint MCP est configuré avec `required: false` sur l’auth Bearer : en exposition Internet, **renforcer** (`required: true`) ou placer l’API derrière un accès restreint.
 4. Tous les utilisateurs d’une même instance partagent les clés Redis : isoler par déploiement si plusieurs personnes ont des comptes Clerk distincts.
 5. L’automatisation Cookidoo / Biocoop / Leclerc Drive peut être soumise aux **CGU** des sites concernés — à votre charge juridique.
@@ -135,5 +135,5 @@ src/app/           # Pages Next.js, routes API (mcp, keys, import cookies)
 src/lib/           # Clients et outils MCP par intégration
 scripts/           # CLI (harvest session, smoke tests)
 docker/            # Proxy Leclerc Drive
-ressources/        # Captures HAR de référence (dev uniquement)
+ressources/        # HAR locaux (gitignoré, non versionné)
 ```
