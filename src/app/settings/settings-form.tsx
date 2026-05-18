@@ -385,8 +385,29 @@ function LeclercdriveCookieUpload({
   onSuccess: (text: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [proxyTesting, setProxyTesting] = useState(false);
+  const [proxyResult, setProxyResult] = useState<string | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function testProxy() {
+    setProxyTesting(true);
+    setProxyResult(null);
+    const res = await fetch("/api/leclercdrive/proxy-test");
+    const data = await res.json();
+    setProxyTesting(false);
+    if (!data.configured) {
+      setProxyResult("LECLERCDRIVE_HTTP_PROXY non défini sur ce déploiement.");
+      return;
+    }
+    if (data.ok) {
+      setProxyResult(
+        `Proxy OK (${data.latencyMs} ms, HTTP ${data.httpStatus ?? "?"}) — ${data.proxyPreview}`
+      );
+      return;
+    }
+    setProxyResult(`Proxy KO : ${data.error ?? "erreur"} — ${data.hint ?? ""}`);
+  }
 
   async function handleFile(file: File | null) {
     if (!file) return;
@@ -422,6 +443,24 @@ function LeclercdriveCookieUpload({
       <p className="text-xs text-gray-500">
         Fichier Netscape exporté après connexion sur le drive. Visible par le MCP sur Vercel si le même Redis.
       </p>
+      <p className="text-xs text-gray-500">
+        Sur Vercel : variable{" "}
+        <code className="rounded bg-gray-100 px-1 font-mono text-[10px]">LECLERCDRIVE_HTTP_PROXY</code>{" "}
+        (http://user:pass@51.159.164.44:3128), puis redéploiement.
+      </p>
+      <button
+        type="button"
+        onClick={() => void testProxy()}
+        disabled={proxyTesting}
+        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+      >
+        {proxyTesting ? "Test proxy…" : "Tester le proxy (depuis ce serveur)"}
+      </button>
+      {proxyResult && (
+        <p className={`text-xs ${proxyResult.startsWith("Proxy OK") ? "text-green-700" : "text-amber-800"}`}>
+          {proxyResult}
+        </p>
+      )}
       {!hasUsername && (
         <p className="text-xs text-amber-700">Enregistrez d’abord l’email Leclerc ci-dessus.</p>
       )}
