@@ -1,9 +1,5 @@
 import { getServiceKeys, getKvClient } from "@/lib/keys/store";
 import {
-  parseBiocoopCookieImportRaw,
-  summarizeBiocoopCookieJar,
-} from "./cookie-import";
-import {
   encodeMagentoUenc,
   extractFormKey,
   extractProductFromPage,
@@ -11,6 +7,8 @@ import {
   parseCartSection,
 } from "./parsing";
 import {
+  BIOCOOP_LOGIN_POST_URL,
+  BIOCOOP_LOGIN_URL,
   BIOCOOP_ORIGIN,
   type BiocoopAddToCartResult,
   type BiocoopCartSummary,
@@ -38,6 +36,7 @@ interface SessionState {
   cookies: Record<string, Record<string, string>>;
   formKey: string | null;
   expiresAt: number;
+  loggedInAt: number;
 }
 
 class CookieJar {
@@ -122,26 +121,33 @@ function parseSetCookie(raw: string): {
   return { name, value, domain, expired };
 }
 
+function hostOf(url: string): string {
+  return new URL(url).host;
+}
+
+function isLoginPage(html: string, finalUrl: string): boolean {
+  if (finalUrl.includes("/customer/account/login")) return true;
+  return (
+    html.includes('id="login-form"') ||
+    (html.includes('name="login[username]"') && html.includes('name="login[password]"'))
+  );
+}
+
 let memorySession: SessionState | null = null;
 let configCache: BiocoopConfig | null = null;
+let inflightLogin: Promise<SessionState> | null = null;
 
 export async function getBiocoopConfig(): Promise<BiocoopConfig> {
   if (configCache) return configCache;
   const keys = await getServiceKeys("biocoop");
   const storePath =
-    keys?.storePath?.trim() ||
-    process.env.BIOCOOP_STORE_PATH?.trim() ||
-    "";
+    keys?.storePath?.trim() || process.env.BIOCOOP_STORE_PATH?.trim() || "";
   if (!storePath) {
     throw new Error(
       "Configurez le chemin magasin Biocoop (ex. magasin-bio_golfe_luscanen) dans les réglages."
     );
   }
-  configCache = {
-    storePath: storePath.replace(/^\/+|\/+$/g, ""),
-    browserCookies:
-      keys?.browserCookies?.trim() || process.env.BIOCOOP_BROWSER_COOKIES?.trim(),
-  };
+  configCache = { storePath: storePath.replace(/^\/+|\/+$/g, "") };
   return configCache;
 }
 
@@ -151,6 +157,22 @@ export function clearBiocoopConfigCache(): void {
 
 function storeBaseUrl(config: BiocoopConfig): string {
   return `${BIOCOOP_ORIGIN}/${config.storePath}`;
+}
+
+async function getCredentials(): Promise<{ username: string; password: string }> {
+  const keys = await getServiceKeys("biocoop");
+  const username =
+    (typeof keys?.username === "string" && keys.username.trim()) ||
+    process.env.BIOCOOP_USERNAME?.trim();
+  const password =
+    (typeof keys?.password === "string" && keys.password.trim()) ||
+    process.env.BIOCOOP_PASSWORD?.trim();
+  if (!username || !password) {
+    throw new Error(
+      "Identifiants Biocoop non configurés. Enregistrez email et mot de passe sur /settings ou définissez BIOCOOP_USERNAME et BIOCOOP_PASSWORD."
+    );
+  }
+  return { username, password };
 }
 
 async function loadSession(): Promise<SessionState | null> {
@@ -172,46 +194,171 @@ async function saveSession(state: SessionState): Promise<void> {
   await kv.set(SESSION_KEY, state, { ex: SESSION_TTL_SECONDS });
 }
 
-async function ensureSession(): Promise<SessionState> {
-  const existing = await loadSession();
-  if (existing) return existing;
+async function fetchWithJar(
+  jar: CookieJar,
+  startUrl: string,
+  init: RequestInit & { maxRedirects?: number } = {}
+): Promise<{ response: Response; finalUrl: string; text: string }> {
+  let currentUrl = startUrl;
+  let currentInit: RequestInit = {
+    ...init,
+    redirect: "manual",
+    headers: { ...COMMON_HEADERS, ...(init.headers as Record<string, string> | undefined) },
+  };
+  const maxRedirects = init.maxRedirects ?? 8;
 
+  for (let i = 0; i <= maxRedirects; i++) {
+    const cookieHeader = jar.getCookieHeader(hostOf(currentUrl));
+    const headers = new Headers(currentInit.headers as HeadersInit);
+    if (cookieHeader) headers.set("cookie", cookieHeader);
+    const response = await fetch(currentUrl, { ...currentInit, headers });
+    jar.ingest(hostOf(currentUrl), response);
+
+    const status = response.status;
+    if (status >= 300 && status < 400) {
+      const location = response.headers.get("location");
+      if (!location) {
+        const text = await response.text();
+        return { response, finalUrl: currentUrl, text };
+      }
+      const keepMethod = status === 307 || status === 308;
+      const nextUrl = new URL(location, currentUrl).toString();
+      await response.text().catch(() => undefined);
+      currentInit = {
+        ...currentInit,
+        method: keepMethod ? currentInit.method : "GET",
+        body: keepMethod ? currentInit.body : undefined,
+        headers: { ...COMMON_HEADERS, ...(init.headers as Record<string, string> | undefined) },
+      };
+      currentUrl = nextUrl;
+      continue;
+    }
+
+    const text = await response.text();
+    return { response, finalUrl: currentUrl, text };
+  }
+
+  throw new Error(`Biocoop : trop de redirections (>${maxRedirects})`);
+}
+
+async function syncStoreContext(
+  jar: CookieJar,
+  config: BiocoopConfig
+): Promise<string | null> {
+  const { text, finalUrl } = await fetchWithJar(jar, `${storeBaseUrl(config)}/`, {
+    method: "GET",
+    headers: {
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      referer: BIOCOOP_ORIGIN,
+      "upgrade-insecure-requests": "1",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "same-origin",
+    },
+  });
+  if (isLoginPage(text, finalUrl)) return null;
+  return extractFormKey(text);
+}
+
+async function performLogin(): Promise<SessionState> {
+  const { username, password } = await getCredentials();
   const config = await getBiocoopConfig();
-  if (!config.browserCookies) {
+  const jar = new CookieJar();
+
+  const loginPage = await fetchWithJar(jar, BIOCOOP_LOGIN_URL, {
+    method: "GET",
+    headers: {
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "upgrade-insecure-requests": "1",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "none",
+      "sec-fetch-user": "?1",
+    },
+  });
+
+  const formKey = extractFormKey(loginPage.text);
+  if (!formKey) {
+    throw new Error("Biocoop : form_key introuvable sur la page de connexion.");
+  }
+
+  const body = new URLSearchParams({
+    form_key: formKey,
+    "login[username]": username,
+    "login[password]": password,
+  }).toString();
+
+  const submit = await fetchWithJar(jar, BIOCOOP_LOGIN_POST_URL, {
+    method: "POST",
+    body,
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      origin: BIOCOOP_ORIGIN,
+      referer: BIOCOOP_LOGIN_URL,
+      "upgrade-insecure-requests": "1",
+      "sec-fetch-dest": "document",
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "same-origin",
+      "sec-fetch-user": "?1",
+      "cache-control": "max-age=0",
+    },
+  });
+
+  if (isLoginPage(submit.text, submit.finalUrl)) {
+    const err =
+      submit.text.match(/data-ui-id="message-error"[^>]*>[\s\S]*?<div[^>]*>([^<]+)/i)?.[1] ??
+      submit.text.match(/class="message-error[^"]*"[^>]*>[\s\S]*?<div[^>]*>([^<]+)/i)?.[1];
     throw new Error(
-      "Session Biocoop absente : importez les cookies du navigateur (réglages ou outil biocoop_set_browser_cookies)."
+      `Biocoop : connexion refusée${err ? ` — ${err.trim()}` : ""}. Vérifiez email et mot de passe sur /settings.`
     );
   }
 
-  const jar = parseBiocoopCookieImportRaw(config.browserCookies);
-  if (Object.keys(jar).length === 0) {
-    throw new Error("Cookies Biocoop invalides ou vides.");
-  }
+  const storeFormKey = await syncStoreContext(jar, config);
 
   const state: SessionState = {
-    cookies: jar,
-    formKey: Object.values(jar).find((c) => c.form_key)?.form_key ?? null,
+    cookies: jar.toJSON(),
+    formKey: storeFormKey,
+    loggedInAt: Date.now(),
     expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
   };
   await saveSession(state);
   return state;
 }
 
+async function ensureSession(): Promise<SessionState> {
+  const existing = await loadSession();
+  if (existing) return existing;
+
+  if (!inflightLogin) {
+    inflightLogin = performLogin().finally(() => {
+      inflightLogin = null;
+    });
+  }
+  return inflightLogin;
+}
+
+function sessionToJar(session: SessionState): CookieJar {
+  return new CookieJar(session.cookies);
+}
+
 async function refreshFormKey(session: SessionState, config: BiocoopConfig): Promise<string> {
   if (session.formKey) return session.formKey;
-
-  const html = await biocoopFetchText(
-    `${storeBaseUrl(config)}/`,
-    session,
-    { referer: BIOCOOP_ORIGIN }
-  );
-  const key = extractFormKey(html);
+  const jar = sessionToJar(session);
+  const key = await syncStoreContext(jar, config);
   if (!key) {
+    await biocoopClearSession();
+    const fresh = await ensureSession();
+    if (fresh.formKey) return fresh.formKey;
     throw new Error(
-      "form_key introuvable — rechargez la page magasin dans le navigateur et réimportez les cookies."
+      "Biocoop : form_key introuvable après connexion. Vérifiez le chemin magasin."
     );
   }
   session.formKey = key;
+  session.cookies = jar.toJSON();
   await saveSession(session);
   return key;
 }
@@ -221,25 +368,30 @@ async function biocoopFetchText(
   session: SessionState,
   opts?: { referer?: string; ajax?: boolean }
 ): Promise<string> {
-  const host = new URL(url).host;
-  const headers: Record<string, string> = {
-    ...COMMON_HEADERS,
-    accept: opts?.ajax
-      ? "application/json, text/javascript, */*; q=0.01"
-      : "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    cookie: new CookieJar(session.cookies).getCookieHeader(host),
-  };
-  if (opts?.referer) headers.referer = opts.referer;
-  if (opts?.ajax) {
-    headers["x-requested-with"] = "XMLHttpRequest";
+  const jar = sessionToJar(session);
+  const { text, finalUrl, response } = await fetchWithJar(jar, url, {
+    method: "GET",
+    headers: {
+      accept: opts?.ajax
+        ? "application/json, text/javascript, */*; q=0.01"
+        : "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      ...(opts?.referer ? { referer: opts.referer } : {}),
+      ...(opts?.ajax ? { "x-requested-with": "XMLHttpRequest" } : {}),
+    },
+  });
+
+  session.cookies = jar.toJSON();
+
+  if (isLoginPage(text, finalUrl)) {
+    await biocoopClearSession();
+    const fresh = await ensureSession();
+    return biocoopFetchText(url, fresh, opts);
   }
 
-  const res = await fetch(url, { method: "GET", headers, redirect: "follow" });
-  new CookieJar(session.cookies).ingest(host, res);
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Biocoop HTTP ${res.status} sur ${url}`);
+  if (!response.ok) {
+    throw new Error(`Biocoop HTTP ${response.status} sur ${url}`);
   }
+
   await saveSession(session);
   return text;
 }
@@ -279,27 +431,32 @@ async function biocoopPostMultipart<T>(
   fields: Record<string, string>,
   referer: string
 ): Promise<T> {
-  const host = new URL(url).host;
+  const jar = sessionToJar(session);
   const { body, contentType } = buildMultipartBody(fields);
-  const headers: Record<string, string> = {
-    ...COMMON_HEADERS,
-    accept: "application/json, text/javascript, */*; q=0.01",
-    "content-type": contentType,
-    "x-requested-with": "XMLHttpRequest",
-    referer,
-    cookie: new CookieJar(session.cookies).getCookieHeader(host),
-  };
+  const { text, response, finalUrl } = await fetchWithJar(jar, url, {
+    method: "POST",
+    body,
+    headers: {
+      accept: "application/json, text/javascript, */*; q=0.01",
+      "content-type": contentType,
+      "x-requested-with": "XMLHttpRequest",
+      referer,
+    },
+  });
 
-  const res = await fetch(url, { method: "POST", headers, body, redirect: "follow" });
-  const jar = new CookieJar(session.cookies);
-  jar.ingest(host, res);
   session.cookies = jar.toJSON();
-  const text = await res.text();
-  await saveSession(session);
 
-  if (!res.ok) {
-    throw new Error(`Biocoop HTTP ${res.status} : ${text.slice(0, 300)}`);
+  if (isLoginPage(text, finalUrl)) {
+    await biocoopClearSession();
+    const fresh = await ensureSession();
+    return biocoopPostMultipart(url, fresh, fields, referer);
   }
+
+  if (!response.ok) {
+    throw new Error(`Biocoop HTTP ${response.status} : ${text.slice(0, 300)}`);
+  }
+
+  await saveSession(session);
 
   try {
     return JSON.parse(text) as T;
@@ -312,7 +469,7 @@ export async function biocoopGetSessionStatus(): Promise<{
   storePath: string;
   storeUrl: string;
   hasSession: boolean;
-  cookieSummary: ReturnType<typeof summarizeBiocoopCookieJar> | null;
+  loggedInAt: number | null;
   formKeyPresent: boolean;
 }> {
   const config = await getBiocoopConfig();
@@ -321,43 +478,23 @@ export async function biocoopGetSessionStatus(): Promise<{
     storePath: config.storePath,
     storeUrl: storeBaseUrl(config),
     hasSession: Boolean(session),
-    cookieSummary: session ? summarizeBiocoopCookieJar(session.cookies) : null,
+    loggedInAt: session?.loggedInAt ?? null,
     formKeyPresent: Boolean(session?.formKey),
   };
 }
 
-export async function biocoopSetBrowserCookies(raw: string): Promise<{
+export async function biocoopForceRelogin(): Promise<{
   ok: true;
-  summary: ReturnType<typeof summarizeBiocoopCookieJar>;
+  loggedInAt: number;
+  storePath: string;
 }> {
-  const jar = parseBiocoopCookieImportRaw(raw);
-  if (Object.keys(jar).length === 0) {
-    throw new Error(
-      "Aucun cookie biocoop.fr trouvé. Exportez depuis Chrome/Arc (cookies.txt ou DevTools)."
-    );
-  }
-
-  const keys = await getServiceKeys("biocoop");
-  const storePath = keys?.storePath?.trim() || process.env.BIOCOOP_STORE_PATH?.trim();
-  if (!storePath) {
-    throw new Error("Configurez d'abord le chemin magasin Biocoop dans les réglages.");
-  }
-
-  const summary = summarizeBiocoopCookieJar(jar);
-  const state: SessionState = {
-    cookies: jar,
-    formKey: Object.values(jar).find((c) => c.form_key)?.form_key ?? null,
-    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+  await biocoopClearSession();
+  const session = await performLogin();
+  return {
+    ok: true,
+    loggedInAt: session.loggedInAt,
+    storePath: (await getBiocoopConfig()).storePath,
   };
-  await saveSession(state);
-  clearBiocoopConfigCache();
-
-  const kv = getKvClient();
-  if (kv) {
-    await kv.set(`${SESSION_KEY}:cookies-imported`, true, { ex: SESSION_TTL_SECONDS });
-  }
-
-  return { ok: true, summary };
 }
 
 export async function biocoopSearchProducts(
@@ -489,13 +626,7 @@ export async function biocoopUpdateCartQuantity(
 
 export async function biocoopClearSession(): Promise<void> {
   memorySession = null;
+  inflightLogin = null;
   const kv = getKvClient();
   if (kv) await kv.del(SESSION_KEY);
-}
-
-export async function importBiocoopCookies(
-  raw: string
-): Promise<ReturnType<typeof summarizeBiocoopCookieJar>> {
-  const res = await biocoopSetBrowserCookies(raw);
-  return res.summary;
 }

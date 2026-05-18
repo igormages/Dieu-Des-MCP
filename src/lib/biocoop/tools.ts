@@ -3,11 +3,11 @@ import { z } from "zod";
 import {
   biocoopAddToCart,
   biocoopClearSession,
+  biocoopForceRelogin,
   biocoopGetCart,
   biocoopGetProduct,
   biocoopGetSessionStatus,
   biocoopSearchProducts,
-  biocoopSetBrowserCookies,
   biocoopUpdateCartQuantity,
 } from "./client";
 
@@ -19,23 +19,10 @@ function jsonText(data: unknown) {
 
 export function registerBiocoopTools(server: McpServer): void {
   server.tool(
-    "biocoop_get_session",
-    "Vérifie la session Biocoop (magasin configuré, cookies, form_key Magento).",
+    "biocoop_get_account",
+    "Vérifie la session Biocoop (magasin, connexion email/mot de passe).",
     {},
     async () => jsonText(await biocoopGetSessionStatus())
-  );
-
-  server.tool(
-    "biocoop_set_browser_cookies",
-    "Importe les cookies depuis Chrome/Arc (fichier cookies.txt ou chaîne nom=valeur). Nécessaire pour le panier invité Magento.",
-    {
-      cookieString: z
-        .string()
-        .describe(
-          "Contenu cookies.txt Netscape pour biocoop.fr, ou chaîne « PHPSESSID=…; form_key=… » depuis DevTools."
-        ),
-    },
-    async ({ cookieString }) => jsonText(await biocoopSetBrowserCookies(cookieString))
   );
 
   server.tool(
@@ -101,8 +88,15 @@ export function registerBiocoopTools(server: McpServer): void {
   );
 
   server.tool(
-    "biocoop_clear_session",
-    "Efface la session Biocoop en cache (cookies / form_key).",
+    "biocoop_relogin",
+    "Force une nouvelle connexion Biocoop (email + mot de passe Magento).",
+    {},
+    async () => jsonText(await biocoopForceRelogin())
+  );
+
+  server.tool(
+    "biocoop_logout",
+    "Efface la session Biocoop en cache.",
     {},
     async () => {
       await biocoopClearSession();

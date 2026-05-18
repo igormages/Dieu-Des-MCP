@@ -1,8 +1,9 @@
 export const BIOCOOP_ORIGIN = "https://www.biocoop.fr";
+export const BIOCOOP_LOGIN_URL = `${BIOCOOP_ORIGIN}/customer/account/login/`;
+export const BIOCOOP_LOGIN_POST_URL = `${BIOCOOP_ORIGIN}/customer/account/loginPost/`;
 
 export interface BiocoopConfig {
   storePath: string;
-  browserCookies?: string;
 }
 
 export interface BiocoopSearchProduct {

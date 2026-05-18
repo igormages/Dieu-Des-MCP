@@ -269,15 +269,19 @@ export const SERVICE_DEFINITIONS: Record<
     label: "Biocoop",
     fields: [
       {
+        key: "username",
+        label: "Email du compte Biocoop",
+        placeholder: "votre.email@example.com",
+      },
+      {
+        key: "password",
+        label: "Mot de passe",
+        placeholder: "votre mot de passe",
+      },
+      {
         key: "storePath",
         label: "Chemin magasin (slug URL)",
         placeholder: "magasin-bio_golfe_luscanen",
-      },
-      {
-        key: "browserCookies",
-        label: "Cookies navigateur (optionnel si import fichier)",
-        placeholder: "PHPSESSID=…; form_key=…",
-        required: false,
       },
     ],
   },
@@ -422,13 +426,14 @@ function getFromEnv(service: string): ServiceConfig | null {
       return username && password ? { username, password } : null;
     }
     case "biocoop": {
+      const username = process.env.BIOCOOP_USERNAME;
+      const password = process.env.BIOCOOP_PASSWORD;
       const storePath = process.env.BIOCOOP_STORE_PATH;
-      if (!storePath?.trim()) return null;
+      if (!username || !password || !storePath?.trim()) return null;
       return {
+        username,
+        password,
         storePath: storePath.trim(),
-        ...(process.env.BIOCOOP_BROWSER_COOKIES
-          ? { browserCookies: process.env.BIOCOOP_BROWSER_COOKIES }
-          : {}),
       };
     }
     case "leclercdrive": {
