@@ -14,6 +14,7 @@ interface McpCredentialsInfo {
 }
 
 export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
+  const [open, setOpen] = useState(false);
   const [creds, setCreds] = useState<McpCredentialsInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -80,17 +81,45 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
   }, []);
 
   return (
-    <section className="mb-10 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="mb-4">
-        <h2 className="text-xl font-bold text-gray-900">Connexion MCP</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Claude Desktop utilise OAuth uniquement. Cursor utilise le secret en
-          en-tête Bearer dans{" "}
-          <code className="rounded bg-gray-100 px-1 text-xs">mcp.json</code>.
-        </p>
-      </div>
+    <section className="mb-10 rounded-xl border border-gray-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 font-mono text-xs font-bold text-gray-600">
+          MCP
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-gray-900">Connexion MCP</h2>
+          <p className="text-xs text-gray-500">
+            {creds?.configured
+              ? "Identifiants configurés — Claude OAuth / Cursor Bearer"
+              : "Claude Desktop (OAuth) · Cursor (Bearer)"}
+          </p>
+        </div>
+        <span
+          className={`inline-flex h-2 w-2 shrink-0 rounded-full ${creds?.configured ? "bg-green-500" : "bg-gray-300"}`}
+        />
+        <svg
+          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
 
-      <div className="space-y-6">
+      {open && (
+        <div className="space-y-6 border-t border-gray-100 px-6 py-5">
+          <p className="text-sm text-gray-500">
+            Claude Desktop utilise OAuth uniquement. Cursor utilise le secret en
+            en-tête Bearer dans{" "}
+            <code className="rounded bg-gray-100 px-1 text-xs">mcp.json</code>.
+          </p>
+
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">
             URL du serveur
@@ -231,7 +260,8 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
             {error}
           </p>
         )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
