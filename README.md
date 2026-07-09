@@ -66,9 +66,11 @@ URL du serveur (exemple production) :
 https://votre-domaine.vercel.app/api/mcp
 ```
 
-Dans **Cursor** : *Settings → MCP → Add server* → type `sse` ou `http` selon la doc du client, avec l’URL ci-dessus et un **Bearer token** Clerk si l’auth MCP est activée.
+Dans **Cursor** : générez une **clé API MCP** depuis `/settings` (section Connexion MCP) et collez-la dans `~/.cursor/mcp.json`.
 
-Métadonnées OAuth : `/.well-known/oauth-protected-resource`
+Dans **Claude Desktop** : *Réglages → Connecteurs → Ajouter un connecteur personnalisé* avec l’URL ci-dessus — l’OAuth Clerk gère l’authentification automatiquement (pas de token à coller).
+
+Métadonnées OAuth : `/.well-known/oauth-protected-resource` et `/.well-known/oauth-authorization-server`
 
 ## Scripts utiles
 
