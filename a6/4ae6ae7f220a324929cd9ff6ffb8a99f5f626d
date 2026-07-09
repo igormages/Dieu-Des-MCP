@@ -1,0 +1,21 @@
+src/app/api/oauth/approve/route.ts
+  s_7fe958b3de87d9::t_2321c43d36fd61 65-67
+src/app/settings/mcp-connection.tsx
+  s_7fe958b3de87d9::t_8b6954e8ee92c6 87-89,117-118,156,170,173,177-179,211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "a64ae6ae7f220a324929cd9ff6ffb8a99f5f626d",
+  "prompts": {},
+  "sessions": {
+    "s_7fe958b3de87d9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9855f85-b85d-420c-a2b6-782710be3a80",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
