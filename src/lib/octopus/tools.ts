@@ -82,7 +82,21 @@ export function registerOctopusTools(server: McpServer): void {
 
   server.tool(
     "octopus_relogin",
-    "Force une nouvelle connexion Octopus : efface la session cache puis re-login.",
+    "Rafraîchit la session Octopus : utilise le refresh token longue durée en priorité, sinon email/mot de passe.",
+    {},
+    async () => jsonText(await octopusForceRelogin())
+  );
+
+  server.tool(
+    "octopus_kraken_get_session",
+    "Alias de octopus_get_session (compatibilité).",
+    {},
+    async () => jsonText(await octopusGetSessionStatus())
+  );
+
+  server.tool(
+    "octopus_kraken_relogin",
+    "Alias de octopus_relogin (compatibilité).",
     {},
     async () => jsonText(await octopusForceRelogin())
   );

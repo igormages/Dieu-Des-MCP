@@ -121,8 +121,9 @@ const MUTATION_SET_SMART_FLEX_PREFERENCES = `mutation SetSmartFlexDevicePreferen
 }`;
 
 interface OctopusCredentials {
-  email: string;
-  password: string;
+  email?: string;
+  password?: string;
+  refreshToken?: string;
   accountNumber?: string;
   deviceId?: string;
 }
@@ -155,22 +156,21 @@ function refreshExpiresAtIso(state: SessionState): string {
   return new Date(state.refreshExpiresIn * 1000).toISOString();
 }
 
-async function getCredentials(): Promise<OctopusCredentials> {
+async function loadCredentials(): Promise<OctopusCredentials> {
   const keys = await getServiceKeys("octopus");
-  const email =
-    (typeof keys?.email === "string" && keys.email.trim()) ||
-    process.env.OCTOPUS_EMAIL?.trim();
-  const password =
-    (typeof keys?.password === "string" && keys.password.trim()) ||
-    process.env.OCTOPUS_PASSWORD?.trim();
-  if (!email || !password) {
-    throw new Error(
-      "Identifiants Octopus Energy non configurés. Enregistrez email et mot de passe sur /settings ou définissez OCTOPUS_EMAIL et OCTOPUS_PASSWORD."
-    );
-  }
   return {
-    email,
-    password,
+    email:
+      (typeof keys?.email === "string" && keys.email.trim()) ||
+      process.env.OCTOPUS_EMAIL?.trim() ||
+      undefined,
+    password:
+      (typeof keys?.password === "string" && keys.password.trim()) ||
+      process.env.OCTOPUS_PASSWORD?.trim() ||
+      undefined,
+    refreshToken:
+      (typeof keys?.refreshToken === "string" && keys.refreshToken.trim()) ||
+      process.env.OCTOPUS_REFRESH_TOKEN?.trim() ||
+      undefined,
     accountNumber:
       (typeof keys?.accountNumber === "string" && keys.accountNumber.trim()) ||
       process.env.OCTOPUS_ACCOUNT_NUMBER?.trim() ||
@@ -180,6 +180,18 @@ async function getCredentials(): Promise<OctopusCredentials> {
       process.env.OCTOPUS_DEVICE_ID?.trim() ||
       undefined,
   };
+}
+
+function requirePasswordCredentials(creds: OctopusCredentials): {
+  email: string;
+  password: string;
+} {
+  if (!creds.email || !creds.password) {
+    throw new Error(
+      "Identifiants Octopus non configurés. Enregistrez email/mot de passe sur /settings, ou collez un refreshToken longue durée (depuis l'app mobile)."
+    );
+  }
+  return { email: creds.email, password: creds.password };
 }
 
 function parseGraphqlBody<T>(text: string): T {
@@ -340,8 +352,31 @@ async function performTokenRefresh(state: SessionState): Promise<SessionState> {
   return updated;
 }
 
+async function bootstrapFromConfiguredRefreshToken(): Promise<SessionState | null> {
+  const creds = await loadCredentials();
+  if (!creds.refreshToken) return null;
+
+  const provisional: SessionState = {
+    token: "",
+    refreshToken: creds.refreshToken,
+    refreshExpiresIn: Math.floor(Date.now() / 1000) + 86400 * 180,
+    tokenExpiresAt: 0,
+    loggedInAt: Date.now(),
+    accountNumber: creds.accountNumber ?? null,
+    sub: null,
+    preferredName: null,
+  };
+
+  try {
+    return await performTokenRefresh(provisional);
+  } catch {
+    return null;
+  }
+}
+
 async function performLogin(): Promise<SessionState> {
-  const creds = await getCredentials();
+  const creds = await loadCredentials();
+  const { email, password } = requirePasswordCredentials(creds);
 
   const loginData = await graphqlRequest<{
     obtainKrakenToken?: {
@@ -398,12 +433,17 @@ async function performLogin(): Promise<SessionState> {
 async function ensureSessionInner(): Promise<SessionState> {
   let state = await loadSession();
   if (!state) {
+    state = await bootstrapFromConfiguredRefreshToken();
+  }
+  if (!state) {
     return performLogin();
   }
   if (isTokenExpired(state)) {
     try {
       state = await performTokenRefresh(state);
     } catch {
+      const bootstrapped = await bootstrapFromConfiguredRefreshToken();
+      if (bootstrapped) return bootstrapped;
       await clearSession();
       state = await performLogin();
     }
@@ -422,7 +462,7 @@ async function ensureSession(): Promise<SessionState> {
 
 async function resolveAccountNumber(state: SessionState): Promise<string> {
   if (state.accountNumber) return state.accountNumber;
-  const creds = await getCredentials();
+  const creds = await loadCredentials();
   if (creds.accountNumber) return creds.accountNumber;
 
   const accountsData = await graphqlRequest<{
@@ -471,7 +511,7 @@ function mapSchedules(
 }
 
 export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
-  const creds = await getCredentials();
+  const creds = await loadCredentials();
   const stored = await loadSession();
 
   if (!stored) {
@@ -497,7 +537,10 @@ export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
 
 export async function octopusForceRelogin(): Promise<OctopusSessionStatus> {
   await clearSession();
-  await performLogin();
+  const bootstrapped = await bootstrapFromConfiguredRefreshToken();
+  if (!bootstrapped) {
+    await performLogin();
+  }
   return octopusGetSessionStatus();
 }
 
@@ -569,7 +612,7 @@ async function resolveDeviceId(
     };
   }
 
-  const creds = await getCredentials();
+  const creds = await loadCredentials();
   if (creds.deviceId) {
     const { devices } = await octopusGetChargeDevices({
       accountNumber,

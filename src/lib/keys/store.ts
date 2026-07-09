@@ -289,14 +289,22 @@ export const SERVICE_DEFINITIONS: Record<
     label: "Octopus Energy",
     fields: [
       {
+        key: "refreshToken",
+        label: "Refresh token longue durée (recommandé)",
+        placeholder: "depuis l'app mobile — évite le login email/mot de passe",
+        required: false,
+      },
+      {
         key: "email",
-        label: "Email du compte Octopus",
+        label: "Email (si pas de refresh token)",
         placeholder: "votre.email@example.com",
+        required: false,
       },
       {
         key: "password",
-        label: "Mot de passe",
+        label: "Mot de passe (si pas de refresh token)",
         placeholder: "votre mot de passe",
+        required: false,
       },
       {
         key: "accountNumber",
@@ -464,12 +472,14 @@ function getFromEnv(service: string): ServiceConfig | null {
       };
     }
     case "octopus": {
+      const refreshToken = process.env.OCTOPUS_REFRESH_TOKEN;
       const email = process.env.OCTOPUS_EMAIL;
       const password = process.env.OCTOPUS_PASSWORD;
-      if (!email || !password) return null;
+      if (!refreshToken && (!email || !password)) return null;
       return {
-        email,
-        password,
+        ...(refreshToken ? { refreshToken } : {}),
+        ...(email ? { email } : {}),
+        ...(password ? { password } : {}),
         ...(process.env.OCTOPUS_ACCOUNT_NUMBER
           ? { accountNumber: process.env.OCTOPUS_ACCOUNT_NUMBER }
           : {}),
