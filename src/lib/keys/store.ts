@@ -285,6 +285,33 @@ export const SERVICE_DEFINITIONS: Record<
       },
     ],
   },
+  octopus: {
+    label: "Octopus Energy",
+    fields: [
+      {
+        key: "email",
+        label: "Email du compte Octopus",
+        placeholder: "votre.email@example.com",
+      },
+      {
+        key: "password",
+        label: "Mot de passe",
+        placeholder: "votre mot de passe",
+      },
+      {
+        key: "accountNumber",
+        label: "Numéro de compte (optionnel)",
+        placeholder: "A-78F490A5",
+        required: false,
+      },
+      {
+        key: "browserCookies",
+        label: "Cookies navigateur (si blocage Vercel)",
+        placeholder: "session=...; autre=... (depuis DevTools octopusenergy.fr)",
+        required: false,
+      },
+    ],
+  },
   leclercdrive: {
     label: "Leclerc Drive",
     fields: [
@@ -434,6 +461,21 @@ function getFromEnv(service: string): ServiceConfig | null {
         username,
         password,
         storePath: storePath.trim(),
+      };
+    }
+    case "octopus": {
+      const email = process.env.OCTOPUS_EMAIL;
+      const password = process.env.OCTOPUS_PASSWORD;
+      if (!email || !password) return null;
+      return {
+        email,
+        password,
+        ...(process.env.OCTOPUS_ACCOUNT_NUMBER
+          ? { accountNumber: process.env.OCTOPUS_ACCOUNT_NUMBER }
+          : {}),
+        ...(process.env.OCTOPUS_BROWSER_COOKIES
+          ? { browserCookies: process.env.OCTOPUS_BROWSER_COOKIES }
+          : {}),
       };
     }
     case "leclercdrive": {
