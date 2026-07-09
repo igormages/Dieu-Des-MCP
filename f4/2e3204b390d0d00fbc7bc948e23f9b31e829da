@@ -1,0 +1,27 @@
+src/lib/octopus/types.ts
+  s_65b4b1f86a2aa6::t_4b610e7be542b5 7
+src/lib/octopus/client.ts
+  s_65b4b1f86a2aa6::t_949e9bd65a1f17 223,228,231,242
+  s_65b4b1f86a2aa6::t_f8d7dbb544ba8d 142-156
+  s_65b4b1f86a2aa6::t_6f97902ba9d931 280-342,421
+  s_65b4b1f86a2aa6::t_645865a5aaa0af 484,489,494
+  s_65b4b1f86a2aa6::t_a55df32c6e5cbe 367,369-370
+  s_65b4b1f86a2aa6::t_85fe21e88b53cd 398,401-403,405-408,414-420
+  s_65b4b1f86a2aa6::t_c72b64ae8fcab7 422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f42e3204b390d0d00fbc7bc948e23f9b31e829da",
+  "prompts": {},
+  "sessions": {
+    "s_65b4b1f86a2aa6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c8044e5b-7c97-4164-8eda-65d8a1931a35",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
