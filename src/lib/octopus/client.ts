@@ -1,5 +1,10 @@
 import { getServiceKeys, getKvClient } from "@/lib/keys/store";
 import {
+  octopusKrakenClearSession,
+  octopusKrakenForceRelogin,
+  octopusKrakenGetSessionStatus,
+} from "./kraken-client";
+import {
   OCTOPUS_ORIGIN,
   type OctopusCagnotteStatus,
   type OctopusEligibleAgreement,
@@ -514,6 +519,7 @@ export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
   const creds = await getCredentials();
   const stored = await loadSession();
   const jar = buildJar(stored ?? undefined, creds.browserCookies);
+  const kraken = await octopusKrakenGetSessionStatus();
 
   if (!stored) {
     return {
@@ -523,6 +529,7 @@ export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
       accountNumber: creds.accountNumber ?? null,
       preferredName: null,
       sessionExpiresAt: null,
+      kraken,
     };
   }
 
@@ -545,6 +552,7 @@ export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
     accountNumber,
     preferredName,
     sessionExpiresAt: new Date(stored.expiresAt).toISOString(),
+    kraken,
   };
 }
 
@@ -685,11 +693,13 @@ export async function octopusUseCagnotte(options?: {
 
 export async function octopusForceRelogin(): Promise<OctopusSessionStatus> {
   await clearSession();
-  await performLogin();
+  await octopusKrakenClearSession();
+  await Promise.allSettled([performLogin(), octopusKrakenForceRelogin()]);
   return octopusGetSessionStatus();
 }
 
 export async function octopusLogout(): Promise<{ ok: true }> {
   await clearSession();
+  await octopusKrakenClearSession();
   return { ok: true };
 }

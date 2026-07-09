@@ -305,6 +305,12 @@ export const SERVICE_DEFINITIONS: Record<
         required: false,
       },
       {
+        key: "deviceId",
+        label: "ID véhicule Smart Flex (optionnel)",
+        placeholder: "00000000-0002-4300-8085-000000000f88",
+        required: false,
+      },
+      {
         key: "browserCookies",
         label: "Cookies navigateur (si blocage Vercel)",
         placeholder: "session=...; autre=... (depuis DevTools octopusenergy.fr)",
@@ -472,6 +478,9 @@ function getFromEnv(service: string): ServiceConfig | null {
         password,
         ...(process.env.OCTOPUS_ACCOUNT_NUMBER
           ? { accountNumber: process.env.OCTOPUS_ACCOUNT_NUMBER }
+          : {}),
+        ...(process.env.OCTOPUS_DEVICE_ID
+          ? { deviceId: process.env.OCTOPUS_DEVICE_ID }
           : {}),
         ...(process.env.OCTOPUS_BROWSER_COOKIES
           ? { browserCookies: process.env.OCTOPUS_BROWSER_COOKIES }

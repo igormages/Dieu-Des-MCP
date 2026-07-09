@@ -40,6 +40,14 @@ export interface OctopusUseCagnotteResult {
   message: string;
 }
 
+export interface OctopusKrakenSessionStatus {
+  isAuthenticated: boolean;
+  sub: string | null;
+  accountNumber: string | null;
+  preferredName: string | null;
+  tokenExpiresAt: string | null;
+}
+
 export interface OctopusSessionStatus {
   isAuthenticated: boolean;
   authMethod: string | null;
@@ -47,4 +55,51 @@ export interface OctopusSessionStatus {
   accountNumber: string | null;
   preferredName: string | null;
   sessionExpiresAt: string | null;
+  kraken: OctopusKrakenSessionStatus;
+}
+
+export type DayOfWeek =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
+export interface OctopusSmartFlexDevice {
+  id: string;
+  name: string;
+  deviceType: string;
+  provider: string;
+  propertyId: string;
+  make?: string;
+  status: { current: string; isSuspended: boolean };
+}
+
+export interface OctopusChargeScheduleEntry {
+  dayOfWeek: DayOfWeek;
+  time: string;
+  max: number | null;
+}
+
+export interface OctopusChargeSchedule {
+  accountNumber: string;
+  deviceId: string;
+  deviceName: string;
+  mode: string;
+  unit: string;
+  targetType: string;
+  schedules: OctopusChargeScheduleEntry[];
+  message: string;
+}
+
+export interface OctopusSetChargeTargetResult {
+  accountNumber: string;
+  deviceId: string;
+  deviceName: string;
+  time: string;
+  maxPercent: number;
+  schedules: OctopusChargeScheduleEntry[];
+  message: string;
 }
