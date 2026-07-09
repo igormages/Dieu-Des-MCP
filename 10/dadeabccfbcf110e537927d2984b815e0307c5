@@ -1,0 +1,27 @@
+src/app/.well-known/oauth-protected-resource/route.ts
+  s_7fe958b3de87d9::t_d111c84b31fd9d 1,3-4,6-19,21-30
+src/app/settings/mcp-connection.tsx
+  s_7fe958b3de87d9::t_30829b86b3d763 9,12-13,17-18,22-25,33-35,42-54,62-66,71-72,74-75,78-83,86,88,90,99-101,124-165,181-183,186-189,192-193,195,198-200,206,231-234
+src/lib/auth/mcp-credentials.ts
+  s_7fe958b3de87d9::t_761c9d116885ec 1-2,4,6-49,52-72,76-117
+src/lib/auth/verify.ts
+  s_7fe958b3de87d9::t_39d7011cc80d93 2,35-60,62,65,67-69,71-73,76-80,82-85,87
+src/app/api/mcp/credentials/route.ts
+  s_7fe958b3de87d9::t_eb2dfbdf7e13ca 1,4-8,16-17,23-24,34-35,37,41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "10dadeabccfbcf110e537927d2984b815e0307c5",
+  "prompts": {},
+  "sessions": {
+    "s_7fe958b3de87d9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9855f85-b85d-420c-a2b6-782710be3a80",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
