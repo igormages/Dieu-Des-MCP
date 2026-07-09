@@ -1,11 +1,27 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { UserButton } from "@clerk/nextjs";
 import { SettingsForm } from "./settings-form";
+import { McpConnectionPanel } from "./mcp-connection";
+
+function resolveMcpUrl(host: string | null, proto: string | null): string {
+  if (host) {
+    const scheme = proto === "http" ? "http" : "https";
+    return `${scheme}://${host}/api/mcp`;
+  }
+  return "/api/mcp";
+}
 
 export default async function SettingsPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
+
+  const headerList = await headers();
+  const mcpUrl = resolveMcpUrl(
+    headerList.get("x-forwarded-host") ?? headerList.get("host"),
+    headerList.get("x-forwarded-proto")
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -32,6 +48,8 @@ export default async function SettingsPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
+        <McpConnectionPanel mcpUrl={mcpUrl} />
+
         <div className="mb-8">
           <h2 className="text-xl font-bold text-gray-900">Services</h2>
           <p className="mt-1 text-sm text-gray-500">
