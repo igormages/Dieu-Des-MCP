@@ -4,6 +4,7 @@ export interface OctopusSessionStatus {
   accountNumber: string | null;
   preferredName: string | null;
   tokenExpiresAt: string | null;
+  refreshExpiresAt: string | null;
 }
 
 export type DayOfWeek =

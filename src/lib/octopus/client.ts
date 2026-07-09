@@ -139,7 +139,21 @@ interface SessionState {
 }
 
 let memorySession: SessionState | null = null;
-let inflightLogin: Promise<SessionState> | null = null;
+let inflightSession: Promise<SessionState> | null = null;
+
+const TOKEN_REFRESH_BUFFER_MS = 60_000;
+
+function isRefreshExpired(state: SessionState): boolean {
+  return state.refreshExpiresIn * 1000 <= Date.now() + TOKEN_REFRESH_BUFFER_MS;
+}
+
+function isTokenExpired(state: SessionState): boolean {
+  return state.tokenExpiresAt <= Date.now() + TOKEN_REFRESH_BUFFER_MS;
+}
+
+function refreshExpiresAtIso(state: SessionState): string {
+  return new Date(state.refreshExpiresIn * 1000).toISOString();
+}
 
 async function getCredentials(): Promise<OctopusCredentials> {
   const keys = await getServiceKeys("octopus");
@@ -206,17 +220,15 @@ function decodeJwtExpMs(token: string): number {
 }
 
 async function loadSession(): Promise<SessionState | null> {
-  if (memorySession && memorySession.tokenExpiresAt > Date.now() + 60_000) {
+  if (memorySession && !isRefreshExpired(memorySession)) {
     return memorySession;
   }
   const kv = getKvClient();
   if (!kv) {
-    return memorySession && memorySession.tokenExpiresAt > Date.now()
-      ? memorySession
-      : null;
+    return memorySession && !isRefreshExpired(memorySession) ? memorySession : null;
   }
   const raw = await kv.get<SessionState>(SESSION_KEY);
-  if (!raw || raw.tokenExpiresAt <= Date.now() + 60_000) return null;
+  if (!raw || isRefreshExpired(raw)) return null;
   memorySession = raw;
   return raw;
 }
@@ -227,7 +239,7 @@ async function saveSession(state: SessionState): Promise<void> {
   if (!kv) return;
   const ttlSeconds = Math.max(
     60,
-    Math.floor((state.tokenExpiresAt - Date.now()) / 1000)
+    Math.floor((state.refreshExpiresIn * 1000 - Date.now()) / 1000)
   );
   await kv.set(SESSION_KEY, state, { ex: ttlSeconds });
 }
@@ -265,6 +277,69 @@ async function graphqlRequest<T>(
   return parseGraphqlBody<T>(text);
 }
 
+async function obtainLongLivedRefreshToken(
+  accessToken: string,
+  fallback: { refreshToken: string; refreshExpiresIn: number }
+): Promise<{ refreshToken: string; refreshExpiresIn: number }> {
+  const longLived = await graphqlRequest<{
+    obtainLongLivedRefreshToken?: {
+      refreshToken: string;
+      refreshExpiresIn: number;
+    };
+  }>(
+    accessToken,
+    MUTATION_LONG_LIVED_REFRESH,
+    { input: { krakenToken: accessToken } },
+    "generateLongLivedRefreshToken"
+  );
+  if (longLived.obtainLongLivedRefreshToken?.refreshToken) {
+    return {
+      refreshToken: longLived.obtainLongLivedRefreshToken.refreshToken,
+      refreshExpiresIn: longLived.obtainLongLivedRefreshToken.refreshExpiresIn,
+    };
+  }
+  return fallback;
+}
+
+async function performTokenRefresh(state: SessionState): Promise<SessionState> {
+  const refreshData = await graphqlRequest<{
+    obtainKrakenToken?: {
+      token: string;
+      refreshToken: string;
+      refreshExpiresIn: number;
+    };
+  }>(
+    null,
+    MUTATION_LOGIN,
+    { input: { refreshToken: state.refreshToken } },
+    "Login"
+  );
+
+  const refreshResult = refreshData.obtainKrakenToken;
+  if (!refreshResult?.token) {
+    throw new Error("Octopus refresh : token absent dans la réponse.");
+  }
+
+  const { refreshToken, refreshExpiresIn } = await obtainLongLivedRefreshToken(
+    refreshResult.token,
+    {
+      refreshToken: refreshResult.refreshToken ?? state.refreshToken,
+      refreshExpiresIn: refreshResult.refreshExpiresIn ?? state.refreshExpiresIn,
+    }
+  );
+
+  const updated: SessionState = {
+    ...state,
+    token: refreshResult.token,
+    refreshToken,
+    refreshExpiresIn,
+    tokenExpiresAt: decodeJwtExpMs(refreshResult.token),
+    sub: decodeJwtSub(refreshResult.token) ?? state.sub,
+  };
+  await saveSession(updated);
+  return updated;
+}
+
 async function performLogin(): Promise<SessionState> {
   const creds = await getCredentials();
 
@@ -289,21 +364,10 @@ async function performLogin(): Promise<SessionState> {
   let refreshToken = loginResult.refreshToken;
   let refreshExpiresIn = loginResult.refreshExpiresIn;
 
-  const longLived = await graphqlRequest<{
-    obtainLongLivedRefreshToken?: {
-      refreshToken: string;
-      refreshExpiresIn: number;
-    };
-  }>(
+  ({ refreshToken, refreshExpiresIn } = await obtainLongLivedRefreshToken(
     loginResult.token,
-    MUTATION_LONG_LIVED_REFRESH,
-    { input: { krakenToken: loginResult.token } },
-    "generateLongLivedRefreshToken"
-  );
-  if (longLived.obtainLongLivedRefreshToken?.refreshToken) {
-    refreshToken = longLived.obtainLongLivedRefreshToken.refreshToken;
-    refreshExpiresIn = longLived.obtainLongLivedRefreshToken.refreshExpiresIn;
-  }
+    { refreshToken, refreshExpiresIn }
+  ));
 
   const userData = await graphqlRequest<{
     viewer?: { preferredName?: string };
@@ -331,21 +395,29 @@ async function performLogin(): Promise<SessionState> {
   return state;
 }
 
-async function ensureSession(): Promise<SessionState> {
+async function ensureSessionInner(): Promise<SessionState> {
   let state = await loadSession();
   if (!state) {
-    if (!inflightLogin) inflightLogin = performLogin();
+    return performLogin();
+  }
+  if (isTokenExpired(state)) {
     try {
-      state = await inflightLogin;
-    } finally {
-      inflightLogin = null;
+      state = await performTokenRefresh(state);
+    } catch {
+      await clearSession();
+      state = await performLogin();
     }
   }
-  if (state.tokenExpiresAt <= Date.now() + 60_000) {
-    await clearSession();
-    state = await performLogin();
-  }
   return state;
+}
+
+async function ensureSession(): Promise<SessionState> {
+  if (!inflightSession) inflightSession = ensureSessionInner();
+  try {
+    return await inflightSession;
+  } finally {
+    inflightSession = null;
+  }
 }
 
 async function resolveAccountNumber(state: SessionState): Promise<string> {
@@ -409,16 +481,17 @@ export async function octopusGetSessionStatus(): Promise<OctopusSessionStatus> {
       accountNumber: creds.accountNumber ?? null,
       preferredName: null,
       tokenExpiresAt: null,
+      refreshExpiresAt: null,
     };
   }
 
-  const isAuthenticated = stored.tokenExpiresAt > Date.now();
   return {
-    isAuthenticated,
+    isAuthenticated: !isRefreshExpired(stored),
     sub: stored.sub,
     accountNumber: stored.accountNumber ?? creds.accountNumber ?? null,
     preferredName: stored.preferredName,
     tokenExpiresAt: new Date(stored.tokenExpiresAt).toISOString(),
+    refreshExpiresAt: refreshExpiresAtIso(stored),
   };
 }
 
