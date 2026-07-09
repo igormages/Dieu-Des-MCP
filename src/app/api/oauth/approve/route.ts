@@ -62,5 +62,7 @@ export async function POST(req: Request) {
   target.searchParams.set("code", code);
   target.searchParams.set("state", state);
 
-  return NextResponse.redirect(target.toString());
+  // 303 obligatoire : NextResponse.redirect() utilise 307 par défaut, ce qui
+  // conserve POST vers le callback Claude (GET uniquement) → "Method Not Allowed".
+  return NextResponse.redirect(target.toString(), 303);
 }
