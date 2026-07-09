@@ -1,0 +1,21 @@
+src/app/settings/mcp-connection.tsx
+  s_7fe958b3de87d9::t_6d565f49a982ef 263-264
+  s_7fe958b3de87d9::t_51272b74bc4141 84-122
+  s_7fe958b3de87d9::t_b499d62cd9fbb8 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2a188f7dfeb2cc0fcb05a32ab2af4d7fd1e88d88",
+  "prompts": {},
+  "sessions": {
+    "s_7fe958b3de87d9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9855f85-b85d-420c-a2b6-782710be3a80",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
