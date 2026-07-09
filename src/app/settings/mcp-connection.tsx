@@ -231,6 +231,38 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
           </p>
         )}
 
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <strong>Erreur 404 sur accounts.dieumcp.mages.pro ?</strong>
+          <p className="mt-1">
+            L&apos;OAuth Claude redirige vers le portail Clerk{" "}
+            <code className="rounded bg-red-100 px-1 text-xs">accounts.dieumcp.mages.pro</code>.
+            Si cette URL renvoie 404, le domaine n&apos;est pas correctement activé sur
+            l&apos;instance Clerk <strong>production</strong> :
+          </p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
+            <li>
+              Clerk Dashboard → <strong>Configure → Domains</strong>
+            </li>
+            <li>
+              Vérifiez que{" "}
+              <code className="rounded bg-red-100 px-1 text-xs">clerk.dieumcp.mages.pro</code>{" "}
+              et{" "}
+              <code className="rounded bg-red-100 px-1 text-xs">accounts.dieumcp.mages.pro</code>{" "}
+              sont <strong>Verified</strong> (pas seulement le domaine principal)
+            </li>
+            <li>
+              Si « Pending », ajoutez les enregistrements DNS CNAME indiqués par Clerk
+            </li>
+            <li>
+              En attendant, connectez-vous d&apos;abord sur{" "}
+              <a href="/sign-in" className="underline">
+                dieumcp.mages.pro/sign-in
+              </a>{" "}
+              puis réessayez le connecteur Claude
+            </li>
+          </ol>
+        </div>
+
         <p className="text-xs text-gray-500">
           Option avancée : activez aussi l&apos;
           <strong>enregistrement dynamique des clients OAuth</strong> dans le
