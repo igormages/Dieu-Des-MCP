@@ -1,0 +1,39 @@
+src/app/api/oauth/approve/route.ts
+  s_7fe958b3de87d9::t_a716fc31a4bc15 1-66
+src/app/oauth/authorize/page.tsx
+  s_7fe958b3de87d9::t_0ad38712c26c29 1-107
+src/app/oauth/authorize/consent-form.tsx
+  s_7fe958b3de87d9::t_fa39412da8bc12 1-61
+src/app/.well-known/oauth-authorization-server/route.ts
+  s_7fe958b3de87d9::t_9ca9cb7f9480e4 1-31
+src/lib/auth/verify.ts
+  s_7fe958b3de87d9::t_9bb6adb8c037ec 3
+  s_7fe958b3de87d9::t_010f1d73ded938 85-89
+src/app/settings/mcp-connection.tsx
+  s_7fe958b3de87d9::t_c3927b8833a0a1 99-101
+  s_7fe958b3de87d9::t_10d8223893a298 166-234,237
+src/app/.well-known/oauth-protected-resource/route.ts
+  s_7fe958b3de87d9::t_6c3ccf52f7ca5d 9-10
+src/app/api/oauth/token/route.ts
+  s_7fe958b3de87d9::t_e466589c434e91 1-99
+src/lib/auth/mcp-oauth.ts
+  s_7fe958b3de87d9::t_6ee4b8ae055bcb 1-98
+src/app/sign-in/[[...sign-in]]/page.tsx
+  s_7fe958b3de87d9::t_738c2c2804c7f1 3-9,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0a4c219e758850e7c8759a05f15ed369c5a462ea",
+  "prompts": {},
+  "sessions": {
+    "s_7fe958b3de87d9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9855f85-b85d-420c-a2b6-782710be3a80",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
