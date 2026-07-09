@@ -57,7 +57,7 @@ const handler = createMcpHandler(
 );
 
 const authHandler = withMcpAuth(handler, verifyBearerToken, {
-  required: false,
+  required: true,
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
 });
 

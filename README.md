@@ -112,7 +112,7 @@ Client MCP (Cursor, etc.)
 
 1. **Ne jamais committer** `.env`, cookies, captures HAR avec session, configs WireGuard (déjà dans `.gitignore`).
 2. Le dossier `ressources/` (HAR, configs VPN) est **gitignoré** : gardez-le en local uniquement, jamais dans git.
-3. Le endpoint MCP est configuré avec `required: false` sur l’auth Bearer : en exposition Internet, **renforcer** (`required: true`) ou placer l’API derrière un accès restreint.
+3. Le endpoint MCP exige un **Bearer token** Clerk valide (`session_token` ou `oauth_token`). Sans token, les requêtes reçoivent une `401`.
 4. Tous les utilisateurs d’une même instance partagent les clés Redis : isoler par déploiement si plusieurs personnes ont des comptes Clerk distincts.
 5. L’automatisation Cookidoo / Biocoop / Leclerc Drive peut être soumise aux **CGU** des sites concernés — à votre charge juridique.
 
