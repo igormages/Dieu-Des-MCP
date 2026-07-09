@@ -1,14 +1,22 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function copyText(text: string, onDone: () => void) {
   void navigator.clipboard.writeText(text).then(onDone);
 }
 
+interface OAuthClientInfo {
+  configured: boolean;
+  clientId?: string;
+  redirectUri?: string;
+}
+
 export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [oauthClient, setOauthClient] = useState<OAuthClientInfo | null>(null);
+  const [loadingKey, setLoadingKey] = useState(false);
+  const [loadingOAuth, setLoadingOAuth] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,8 +44,36 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
     setTimeout(() => setCopied(null), 2000);
   }, []);
 
+  const ensureOAuthClient = useCallback(async () => {
+    setLoadingOAuth(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/mcp/oauth-client", { method: "POST" });
+      const data = (await res.json()) as OAuthClientInfo & { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Impossible de préparer le client OAuth.");
+        return;
+      }
+      setOauthClient(data);
+    } catch {
+      setError("Erreur réseau lors de la préparation OAuth.");
+    } finally {
+      setLoadingOAuth(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/mcp/oauth-client");
+      if (res.ok) {
+        const data = (await res.json()) as OAuthClientInfo;
+        setOauthClient(data);
+      }
+    })();
+  }, []);
+
   const createApiKey = useCallback(async () => {
-    setLoading(true);
+    setLoadingKey(true);
     setError(null);
     try {
       const res = await fetch("/api/mcp/api-key", { method: "POST" });
@@ -52,7 +88,7 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
       setError("Erreur réseau lors de la création de la clé.");
       setApiKey(null);
     } finally {
-      setLoading(false);
+      setLoadingKey(false);
     }
   }, []);
 
@@ -61,8 +97,8 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
       <div className="mb-4">
         <h2 className="text-xl font-bold text-gray-900">Connexion MCP</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Deux méthodes selon votre client : OAuth (recommandé pour Claude) ou clé
-          API longue durée (pour Cursor et les configs fichier).
+          Claude Desktop utilise OAuth (client ID). Cursor utilise une clé API
+          longue durée.
         </p>
       </div>
 
@@ -87,49 +123,82 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
 
         <div className="rounded-lg border border-green-200 bg-green-50 p-4">
           <h3 className="text-sm font-semibold text-green-900">
-            Claude Desktop — méthode recommandée
+            Claude Desktop
           </h3>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-green-900">
-            <li>Ouvrez Claude Desktop (version récente).</li>
             <li>
-              Allez dans <strong>Réglages → Connecteurs</strong>.
+              <strong>Réglages → Connecteurs → Ajouter un connecteur personnalisé</strong>
             </li>
             <li>
-              Cliquez sur <strong>Ajouter un connecteur personnalisé</strong>.
+              Nom : <code className="rounded bg-green-100 px-1">dieudesmcp</code>
             </li>
             <li>
-              Nom : <code className="rounded bg-green-100 px-1">dieudesmcp</code> — URL :{" "}
-              <code className="rounded bg-green-100 px-1">{mcpUrl}</code>
+              URL : <code className="rounded bg-green-100 px-1">{mcpUrl}</code>
             </li>
             <li>
-              Claude ouvre une fenêtre de connexion Clerk (OAuth) : aucun token à
-              coller, le renouvellement est automatique.
+              Ouvrez <strong>Paramètres avancés</strong> et collez l&apos;
+              <strong>identifiant client OAuth</strong> ci-dessous (obligatoire si
+              l&apos;enregistrement automatique n&apos;est pas activé).
             </li>
+            <li>Validez — Claude ouvre la connexion Clerk.</li>
           </ol>
-          <p className="mt-3 text-xs text-green-800">
-            Ne pas utiliser <code>claude_desktop_config.json</code> pour ce serveur
-            distant : ce fichier sert aux serveurs MCP locaux (commande), pas aux URL
-            HTTPS avec OAuth.
-          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void ensureOAuthClient()}
+              disabled={loadingOAuth}
+              className="rounded-lg bg-green-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50"
+            >
+              {loadingOAuth
+                ? "Préparation…"
+                : oauthClient?.clientId
+                  ? "Rafraîchir le client OAuth"
+                  : "Préparer le client OAuth Claude"}
+            </button>
+            {oauthClient?.clientId && (
+              <button
+                type="button"
+                onClick={() =>
+                  copyText(oauthClient.clientId!, () => markCopied("oauth"))
+                }
+                className="rounded-lg border border-green-300 bg-white px-3 py-1.5 text-sm font-medium text-green-900 hover:bg-green-100"
+              >
+                {copied === "oauth" ? "Copié" : "Copier le Client ID"}
+              </button>
+            )}
+          </div>
+
+          {oauthClient?.clientId ? (
+            <p className="mt-3 font-mono text-sm text-green-900 break-all">
+              Client ID : {oauthClient.clientId}
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-green-800">
+              Cliquez sur « Préparer le client OAuth Claude » pour créer
+              l&apos;application OAuth Clerk avec la redirect URI{" "}
+              <code className="rounded bg-green-100 px-1">
+                https://claude.ai/api/mcp/auth_callback
+              </code>
+              .
+            </p>
+          )}
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <h3 className="text-sm font-semibold text-gray-900">
-            Cursor — clé API longue durée
-          </h3>
+          <h3 className="text-sm font-semibold text-gray-900">Cursor</h3>
           <p className="mt-1 text-sm text-gray-600">
-            Cursor ne gère pas encore l&apos;OAuth MCP comme Claude. Générez une clé
-            API Clerk (sans expiration) à coller dans{" "}
+            Générez une clé API sans expiration pour{" "}
             <code className="rounded bg-gray-200 px-1 text-xs">~/.cursor/mcp.json</code>.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void createApiKey()}
-              disabled={loading}
+              disabled={loadingKey}
               className="rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
             >
-              {loading ? "Création…" : apiKey ? "Créer une nouvelle clé" : "Générer une clé API MCP"}
+              {loadingKey ? "Création…" : apiKey ? "Créer une nouvelle clé" : "Générer une clé API MCP"}
             </button>
             {apiKey && (
               <button
@@ -141,12 +210,6 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
               </button>
             )}
           </div>
-          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          {apiKey && (
-            <p className="mt-2 font-mono text-xs text-gray-700 break-all">
-              {apiKey.slice(0, 14)}… (secret affiché une seule fois — copiez-le maintenant)
-            </p>
-          )}
           <div className="mt-3 flex items-center justify-between gap-2">
             <span className="text-xs font-medium text-gray-500">Config Cursor</span>
             <button
@@ -162,15 +225,17 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
           </pre>
         </div>
 
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <strong>Grok</strong> — pas de support des connecteurs MCP distants pour
-          l&apos;instant. Utilisez Claude Desktop (OAuth) ou Cursor (clé API).
-        </div>
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
         <p className="text-xs text-gray-500">
-          Prérequis Clerk : activez le <strong>serveur OAuth</strong> et les{" "}
-          <strong>API Keys</strong> dans le dashboard Clerk pour que l&apos;OAuth
-          Claude et les clés Cursor fonctionnent.
+          Option avancée : activez aussi l&apos;
+          <strong>enregistrement dynamique des clients OAuth</strong> dans le
+          dashboard Clerk (OAuth applications) pour que Claude s&apos;enregistre
+          sans Client ID manuel.
         </p>
       </div>
     </section>
