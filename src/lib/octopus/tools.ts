@@ -57,7 +57,7 @@ export function registerOctopusTools(server: McpServer): void {
 
   server.tool(
     "octopus_get_programmed_charge",
-    "Retourne les créneaux de recharge réellement programmés par Smart Flex (GetSmartFlexChargeHistory) : heures de début/fin, session en cours, prochaine session.",
+    "Retourne les créneaux de recharge réels planifiés par l'optimiseur Smart Flex (flexPlannedDispatches) — ex. 00:11 → 02:00. Distinct de l'heure cible configurée.",
     {
       accountNumber: z.string().optional().describe("Numéro de compte Octopus."),
       deviceId: z

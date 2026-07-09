@@ -59,19 +59,25 @@ export interface OctopusProgrammedChargeSlot {
   startLocal: string;
   endLocal: string;
   type: string;
-  stateOfChargeFinal: string | null;
   energyAddedKwh: number | null;
   isActive: boolean;
   isUpcoming: boolean;
-  problems: string[];
+  stateOfChargeFinal?: string | null;
+  problems?: string[];
 }
 
 export interface OctopusProgrammedCharge {
   accountNumber: string;
   deviceId: string;
   deviceName: string;
+  deviceState: string | null;
   targetTime: string | null;
   targetMaxPercent: number | null;
+  plannedWindowStart: string | null;
+  plannedWindowEnd: string | null;
+  plannedWindowStartLocal: string | null;
+  plannedWindowEndLocal: string | null;
+  plannedDispatches: OctopusProgrammedChargeSlot[];
   activeSlot: OctopusProgrammedChargeSlot | null;
   upcomingSlots: OctopusProgrammedChargeSlot[];
   recentSlots: OctopusProgrammedChargeSlot[];

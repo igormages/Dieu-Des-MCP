@@ -144,6 +144,29 @@ const QUERY_GET_SMART_FLEX_CHARGE_HISTORY = `query GetSmartFlexChargeHistory($ac
   }
 }`;
 
+const QUERY_FLEX_PLANNED_DISPATCHES = `query FlexPlannedDispatches($accountNumber: String!, $deviceId: String!) {
+  devices(accountNumber: $accountNumber, deviceId: $deviceId) {
+    __typename
+    id
+    name
+    status {
+      __typename
+      ... on SmartFlexVehicleStatus {
+        current
+        currentState
+        stateOfCharge { value }
+        activePower { value }
+      }
+    }
+  }
+  flexPlannedDispatches(deviceId: $deviceId) {
+    start
+    end
+    type
+    energyAddedKwh
+  }
+}`;
+
 const MUTATION_SET_SMART_FLEX_PREFERENCES = `mutation SetSmartFlexDevicePreferences($input: SmartFlexDevicePreferencesInput!) {
   setDevicePreferences(input: $input) {
     __typename
@@ -742,17 +765,43 @@ function formatParisTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-function mapProgrammedSlot(
+function mapPlannedDispatch(
+  dispatch: {
+    start?: string;
+    end?: string;
+    type?: string;
+    energyAddedKwh?: number | string | null;
+  },
+  now = Date.now()
+): OctopusProgrammedChargeSlot | null {
+  if (!dispatch.start || !dispatch.end) return null;
+  const startMs = new Date(dispatch.start).getTime();
+  const endMs = new Date(dispatch.end).getTime();
+  const energy =
+    dispatch.energyAddedKwh == null
+      ? null
+      : Number.parseFloat(String(dispatch.energyAddedKwh));
+
+  return {
+    start: dispatch.start,
+    end: dispatch.end,
+    startLocal: formatParisTime(dispatch.start),
+    endLocal: formatParisTime(dispatch.end),
+    type: dispatch.type ?? "SMART",
+    energyAddedKwh: Number.isNaN(energy) ? null : energy,
+    isActive: startMs <= now && endMs > now,
+    isUpcoming: startMs > now,
+  };
+}
+
+function mapHistorySlot(
   node: {
     start?: string;
     end?: string;
     type?: string;
     stateOfChargeFinal?: string | null;
     energyAdded?: { value?: string; unit?: string };
-    problems?: Array<{
-      truncationCause?: string;
-      achievableStateOfCharge?: string;
-    }>;
+    problems?: Array<{ truncationCause?: string }>;
   },
   now = Date.now()
 ): OctopusProgrammedChargeSlot | null {
@@ -770,13 +819,13 @@ function mapProgrammedSlot(
     startLocal: formatParisTime(node.start),
     endLocal: formatParisTime(node.end),
     type: node.type ?? "SMART",
-    stateOfChargeFinal: node.stateOfChargeFinal ?? null,
     energyAddedKwh:
       node.energyAdded?.unit === "KILOWATT_HOUR"
         ? Number.parseFloat(node.energyAdded.value ?? "0")
         : null,
     isActive: startMs <= now && endMs > now,
     isUpcoming: startMs > now,
+    stateOfChargeFinal: node.stateOfChargeFinal ?? null,
     problems,
   };
 }
@@ -798,12 +847,32 @@ export async function octopusGetProgrammedCharge(options?: {
 
   const daysBack = options?.daysBack ?? 2;
   const after = new Date(Date.now() - daysBack * 86400000).toISOString();
+  const now = Date.now();
 
-  const [historyData, targetData] = await Promise.all([
+  const [plannedData, historyData, targetData] = await Promise.all([
     graphqlRequest<{
       devices?: Array<{
         id: string;
         name?: string;
+        status?: {
+          currentState?: string;
+          current?: string;
+        };
+      }>;
+      flexPlannedDispatches?: Array<{
+        start: string;
+        end: string;
+        type: string;
+        energyAddedKwh?: number | string | null;
+      }>;
+    }>(
+      state.token,
+      QUERY_FLEX_PLANNED_DISPATCHES,
+      { accountNumber, deviceId },
+      "FlexPlannedDispatches"
+    ),
+    graphqlRequest<{
+      devices?: Array<{
         chargingSessions?: {
           edges?: Array<{
             node?: {
@@ -812,10 +881,7 @@ export async function octopusGetProgrammedCharge(options?: {
               type?: string;
               stateOfChargeFinal?: string | null;
               energyAdded?: { value?: string; unit?: string };
-              problems?: Array<{
-                truncationCause?: string;
-                achievableStateOfCharge?: string;
-              }>;
+              problems?: Array<{ truncationCause?: string }>;
             };
           }>;
         };
@@ -847,19 +913,33 @@ export async function octopusGetProgrammedCharge(options?: {
     ),
   ]);
 
-  const device = historyData.devices?.[0];
-  const now = Date.now();
-  const slots =
-    device?.chargingSessions?.edges
-      ?.map((edge) => mapProgrammedSlot(edge.node ?? {}, now))
+  const device = plannedData.devices?.[0];
+  const plannedDispatches =
+    plannedData.flexPlannedDispatches
+      ?.map((dispatch) => mapPlannedDispatch(dispatch, now))
       .filter((slot): slot is OctopusProgrammedChargeSlot => Boolean(slot))
       .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()) ??
     [];
 
-  const activeSlot = slots.find((slot) => slot.isActive) ?? null;
-  const upcomingSlots = slots.filter((slot) => slot.isUpcoming);
-  const recentSlots = slots
-    .filter((slot) => !slot.isUpcoming)
+  const plannedWindowStart = plannedDispatches[0]?.start ?? null;
+  const plannedWindowEnd = plannedDispatches.at(-1)?.end ?? null;
+  const plannedWindowStartLocal = plannedDispatches[0]?.startLocal ?? null;
+  const plannedWindowEndLocal = plannedDispatches.at(-1)?.endLocal ?? null;
+
+  const historySlots =
+    historyData.devices?.[0]?.chargingSessions?.edges
+      ?.map((edge) => mapHistorySlot(edge.node ?? {}, now))
+      .filter((slot): slot is OctopusProgrammedChargeSlot => Boolean(slot))
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()) ??
+    [];
+
+  const activeSlot =
+    plannedDispatches.find((slot) => slot.isActive) ??
+    historySlots.find((slot) => slot.isActive) ??
+    null;
+  const upcomingSlots = plannedDispatches.filter((slot) => slot.isUpcoming);
+  const recentSlots = historySlots
+    .filter((slot) => !slot.isUpcoming && !slot.isActive)
     .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
 
   const targetSchedule = targetData.devices?.[0]?.preferences?.schedules?.[0];
@@ -868,15 +948,15 @@ export async function octopusGetProgrammedCharge(options?: {
     : null;
   const targetMaxPercent = targetSchedule?.max ?? null;
 
-  let message = "Aucune session Smart Flex programmée récente.";
-  if (activeSlot) {
-    message = `Recharge en cours : ${activeSlot.startLocal} → ${activeSlot.endLocal}.`;
-  } else if (upcomingSlots.length > 0) {
-    const next = upcomingSlots[0];
-    message = `Prochaine recharge programmée : ${next.startLocal} → ${next.endLocal}.`;
+  let message = "Aucun créneau Smart Flex planifié pour le moment.";
+  if (plannedDispatches.length > 0 && plannedWindowStartLocal && plannedWindowEndLocal) {
+    message = `Recharge programmée : ${plannedWindowStartLocal} → ${plannedWindowEndLocal}.`;
+    if (activeSlot) {
+      message += " Créneau en cours.";
+    }
   } else if (recentSlots.length > 0) {
     const last = recentSlots[0];
-    message = `Dernière recharge programmée : ${last.startLocal} → ${last.endLocal}.`;
+    message = `Dernière session : ${last.startLocal} → ${last.endLocal}. Aucun créneau planifié actuellement.`;
   }
   if (targetTime) {
     message += ` Heure cible configurée : ${targetTime}.`;
@@ -886,8 +966,14 @@ export async function octopusGetProgrammedCharge(options?: {
     accountNumber,
     deviceId,
     deviceName: device?.name ?? deviceName,
+    deviceState: device?.status?.currentState ?? null,
     targetTime,
     targetMaxPercent,
+    plannedWindowStart,
+    plannedWindowEnd,
+    plannedWindowStartLocal,
+    plannedWindowEndLocal,
+    plannedDispatches,
     activeSlot,
     upcomingSlots,
     recentSlots,
