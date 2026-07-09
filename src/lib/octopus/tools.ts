@@ -4,6 +4,7 @@ import {
   octopusForceRelogin,
   octopusGetChargeDevices,
   octopusGetChargeSchedule,
+  octopusGetProgrammedCharge,
   octopusGetSessionStatus,
   octopusLogout,
   octopusSetChargeTargetTime,
@@ -42,7 +43,7 @@ export function registerOctopusTools(server: McpServer): void {
 
   server.tool(
     "octopus_get_charge_schedule",
-    "Lit l'heure cible de recharge Smart Flex pour chaque jour (GetSmartFlexDevicePreferences).",
+    "Lit l'heure cible configurée par l'utilisateur (GetSmartFlexDevicePreferences) — ex. 02:00 tous les jours.",
     {
       accountNumber: z.string().optional().describe("Numéro de compte Octopus."),
       deviceId: z
@@ -52,6 +53,36 @@ export function registerOctopusTools(server: McpServer): void {
     },
     async ({ accountNumber, deviceId }) =>
       jsonText(await octopusGetChargeSchedule({ accountNumber, deviceId }))
+  );
+
+  server.tool(
+    "octopus_get_programmed_charge",
+    "Retourne les créneaux de recharge réellement programmés par Smart Flex (GetSmartFlexChargeHistory) : heures de début/fin, session en cours, prochaine session.",
+    {
+      accountNumber: z.string().optional().describe("Numéro de compte Octopus."),
+      deviceId: z
+        .string()
+        .optional()
+        .describe("ID du véhicule. Défaut : deviceId configuré ou premier véhicule."),
+      last: z
+        .number()
+        .int()
+        .positive()
+        .max(20)
+        .optional()
+        .describe("Nombre de sessions SMART à remonter. Défaut : 10."),
+      daysBack: z
+        .number()
+        .int()
+        .positive()
+        .max(30)
+        .optional()
+        .describe("Fenêtre de recherche en jours. Défaut : 2."),
+    },
+    async ({ accountNumber, deviceId, last, daysBack }) =>
+      jsonText(
+        await octopusGetProgrammedCharge({ accountNumber, deviceId, last, daysBack })
+      )
   );
 
   server.tool(

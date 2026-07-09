@@ -3,6 +3,8 @@ import type {
   DayOfWeek,
   OctopusChargeSchedule,
   OctopusChargeScheduleEntry,
+  OctopusProgrammedCharge,
+  OctopusProgrammedChargeSlot,
   OctopusSessionStatus,
   OctopusSetChargeTargetResult,
   OctopusSmartFlexDevice,
@@ -94,6 +96,49 @@ const QUERY_GET_SMART_FLEX_PREFERENCES = `query GetSmartFlexDevicePreferences($a
         min
         max
         upperLimit
+      }
+    }
+  }
+}`;
+
+const QUERY_GET_SMART_FLEX_CHARGE_HISTORY = `query GetSmartFlexChargeHistory($accountNumber: String!, $deviceId: String, $sessionTypes: [ChargingSessionType], $last: Int, $before: DateTime, $after: DateTime!) {
+  devices(deviceId: $deviceId, accountNumber: $accountNumber) {
+    __typename
+    id
+    name
+    ... on SmartFlexVehicle {
+      chargingSessions(sessionTypes: $sessionTypes, last: $last, before: $before, after: $after) {
+        __typename
+        edges {
+          __typename
+          node {
+            __typename
+            ... on SmartFlexChargingSession {
+              start
+              end
+              type
+              stateOfChargeChange
+              stateOfChargeFinal
+              energyAdded {
+                __typename
+                value
+                unit
+              }
+              problems {
+                __typename
+                ... on SmartFlexChargingTruncation {
+                  truncationCause
+                  achievableStateOfCharge
+                }
+              }
+            }
+          }
+        }
+        pageInfo {
+          __typename
+          hasNextPage
+          hasPreviousPage
+        }
       }
     }
   }
@@ -685,6 +730,168 @@ export async function octopusGetChargeSchedule(options?: {
     message: mondayTime
       ? `Heure cible de recharge : ${mondayTime} (tous les jours).`
       : "Aucun horaire de recharge configuré.",
+  };
+}
+
+function formatParisTime(iso: string): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+function mapProgrammedSlot(
+  node: {
+    start?: string;
+    end?: string;
+    type?: string;
+    stateOfChargeFinal?: string | null;
+    energyAdded?: { value?: string; unit?: string };
+    problems?: Array<{
+      truncationCause?: string;
+      achievableStateOfCharge?: string;
+    }>;
+  },
+  now = Date.now()
+): OctopusProgrammedChargeSlot | null {
+  if (!node.start || !node.end) return null;
+  const startMs = new Date(node.start).getTime();
+  const endMs = new Date(node.end).getTime();
+  const problems =
+    node.problems
+      ?.map((p) => p.truncationCause)
+      .filter((cause): cause is string => Boolean(cause)) ?? [];
+
+  return {
+    start: node.start,
+    end: node.end,
+    startLocal: formatParisTime(node.start),
+    endLocal: formatParisTime(node.end),
+    type: node.type ?? "SMART",
+    stateOfChargeFinal: node.stateOfChargeFinal ?? null,
+    energyAddedKwh:
+      node.energyAdded?.unit === "KILOWATT_HOUR"
+        ? Number.parseFloat(node.energyAdded.value ?? "0")
+        : null,
+    isActive: startMs <= now && endMs > now,
+    isUpcoming: startMs > now,
+    problems,
+  };
+}
+
+export async function octopusGetProgrammedCharge(options?: {
+  accountNumber?: string;
+  deviceId?: string;
+  last?: number;
+  daysBack?: number;
+}): Promise<OctopusProgrammedCharge> {
+  const state = await ensureSession();
+  const accountNumber =
+    options?.accountNumber?.trim() || (await resolveAccountNumber(state));
+  const { deviceId, deviceName } = await resolveDeviceId(
+    state,
+    accountNumber,
+    options?.deviceId
+  );
+
+  const daysBack = options?.daysBack ?? 2;
+  const after = new Date(Date.now() - daysBack * 86400000).toISOString();
+
+  const [historyData, targetData] = await Promise.all([
+    graphqlRequest<{
+      devices?: Array<{
+        id: string;
+        name?: string;
+        chargingSessions?: {
+          edges?: Array<{
+            node?: {
+              start?: string;
+              end?: string;
+              type?: string;
+              stateOfChargeFinal?: string | null;
+              energyAdded?: { value?: string; unit?: string };
+              problems?: Array<{
+                truncationCause?: string;
+                achievableStateOfCharge?: string;
+              }>;
+            };
+          }>;
+        };
+      }>;
+    }>(
+      state.token,
+      QUERY_GET_SMART_FLEX_CHARGE_HISTORY,
+      {
+        accountNumber,
+        deviceId,
+        sessionTypes: ["SMART"],
+        last: options?.last ?? 10,
+        before: null,
+        after,
+      },
+      "GetSmartFlexChargeHistory"
+    ),
+    graphqlRequest<{
+      devices?: Array<{
+        preferences?: {
+          schedules?: Array<{ time?: string; max?: number | null }>;
+        };
+      }>;
+    }>(
+      state.token,
+      QUERY_GET_SMART_FLEX_PREFERENCES,
+      { accountNumber, deviceId },
+      "GetSmartFlexDevicePreferences"
+    ),
+  ]);
+
+  const device = historyData.devices?.[0];
+  const now = Date.now();
+  const slots =
+    device?.chargingSessions?.edges
+      ?.map((edge) => mapProgrammedSlot(edge.node ?? {}, now))
+      .filter((slot): slot is OctopusProgrammedChargeSlot => Boolean(slot))
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()) ??
+    [];
+
+  const activeSlot = slots.find((slot) => slot.isActive) ?? null;
+  const upcomingSlots = slots.filter((slot) => slot.isUpcoming);
+  const recentSlots = slots
+    .filter((slot) => !slot.isUpcoming)
+    .sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+
+  const targetSchedule = targetData.devices?.[0]?.preferences?.schedules?.[0];
+  const targetTime = targetSchedule?.time
+    ? formatScheduleTime(targetSchedule.time)
+    : null;
+  const targetMaxPercent = targetSchedule?.max ?? null;
+
+  let message = "Aucune session Smart Flex programmée récente.";
+  if (activeSlot) {
+    message = `Recharge en cours : ${activeSlot.startLocal} → ${activeSlot.endLocal}.`;
+  } else if (upcomingSlots.length > 0) {
+    const next = upcomingSlots[0];
+    message = `Prochaine recharge programmée : ${next.startLocal} → ${next.endLocal}.`;
+  } else if (recentSlots.length > 0) {
+    const last = recentSlots[0];
+    message = `Dernière recharge programmée : ${last.startLocal} → ${last.endLocal}.`;
+  }
+  if (targetTime) {
+    message += ` Heure cible configurée : ${targetTime}.`;
+  }
+
+  return {
+    accountNumber,
+    deviceId,
+    deviceName: device?.name ?? deviceName,
+    targetTime,
+    targetMaxPercent,
+    activeSlot,
+    upcomingSlots,
+    recentSlots,
+    message,
   };
 }
 
