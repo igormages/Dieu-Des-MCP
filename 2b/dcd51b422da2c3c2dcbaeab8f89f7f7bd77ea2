@@ -1,0 +1,19 @@
+pnpm-lock.yaml
+  s_7fe958b3de87d9::t_e3bd953fa80d11 11-13,165-190,477,483,489,495,501,507,513,519,526,533,540,547,554,561,568,575,626-635,662,669,676,683,841,848,855,862,1019,1025,1031,1037,1043,1049,1055,1061,2025,2032,2039,2046,2826-2838,3152-3173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2bdcd51b422da2c3c2dcbaeab8f89f7f7bd77ea2",
+  "prompts": {},
+  "sessions": {
+    "s_7fe958b3de87d9": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c9855f85-b85d-420c-a2b6-782710be3a80",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
