@@ -1,5 +1,6 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { verifyMcpClientSecret } from "./mcp-credentials";
+import { verifyAccessToken } from "./mcp-oauth";
 
 const MCP_SCOPES = [
   "read:qonto",
@@ -80,6 +81,11 @@ export async function verifyBearerToken(
       : undefined);
 
   if (!token) return undefined;
+
+  const oauthToken = await verifyAccessToken(token);
+  if (oauthToken) {
+    return toAuthInfo(oauthToken.clientId, token);
+  }
 
   const creds = await verifyMcpClientSecret(token);
   if (!creds) return undefined;

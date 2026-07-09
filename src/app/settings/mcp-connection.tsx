@@ -96,9 +96,9 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
       <div className="mb-4">
         <h2 className="text-xl font-bold text-gray-900">Connexion MCP</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Identifiants générés par l&apos;app — pas d&apos;OAuth Clerk. Claude et
-          Cursor envoient le secret dans l&apos;en-tête{" "}
-          <code className="rounded bg-gray-100 px-1 text-xs">Authorization</code>.
+          Identifiants générés par l&apos;app. OAuth sur{" "}
+          <code className="rounded bg-gray-100 px-1 text-xs">dieumcp.mages.pro</code>{" "}
+          — plus de Clerk pour les clients MCP.
         </p>
       </div>
 
@@ -163,9 +163,78 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
           )}
         </div>
 
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h3 className="text-sm font-semibold text-amber-900">
+            Important — supprimez l&apos;ancien connecteur
+          </h3>
+          <p className="mt-1 text-sm text-amber-900">
+            Si Claude ouvre{" "}
+            <code className="rounded bg-amber-100 px-1 text-xs">
+              clerk.dieumcp.mages.pro
+            </code>
+            , c&apos;est l&apos;ancienne config OAuth Clerk en cache.{" "}
+            <strong>Supprimez le connecteur</strong> dans Claude puis recréez-le
+            avec les instructions ci-dessous.
+          </p>
+        </div>
+
         <div className="rounded-lg border border-green-200 bg-green-50 p-4">
           <h3 className="text-sm font-semibold text-green-900">
-            Claude Desktop
+            Claude Desktop (OAuth)
+          </h3>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-green-900">
+            <li>
+              <strong>Réglages → Connecteurs → Ajouter un connecteur personnalisé</strong>
+            </li>
+            <li>
+              Nom : <code className="rounded bg-green-100 px-1">dieudesmcp</code>
+            </li>
+            <li>
+              URL : <code className="rounded bg-green-100 px-1">{mcpUrl}</code>
+            </li>
+            <li>
+              Paramètres avancés → <strong>Identifiant client OAuth</strong> :{" "}
+              votre Client ID <code className="rounded bg-green-100 px-1">dmcp_…</code>
+            </li>
+            <li>
+              Paramètres avancés → <strong>Secret client OAuth</strong> : votre
+              secret <code className="rounded bg-green-100 px-1">dmcp_sec_…</code>
+            </li>
+            <li>
+              À la connexion, Claude ouvre{" "}
+              <code className="rounded bg-green-100 px-1">dieumcp.mages.pro/oauth/authorize</code>{" "}
+              (pas Clerk) — cliquez Autoriser.
+            </li>
+          </ol>
+          {creds?.clientId && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  copyText(creds.clientId!, () => markCopied("claude-id"))
+                }
+                className="rounded border border-green-300 px-2 py-1 text-xs font-medium text-green-900 hover:bg-green-100"
+              >
+                {copied === "claude-id" ? "Copié" : "Copier Client ID"}
+              </button>
+              {creds.clientSecret && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyText(creds.clientSecret!, () => markCopied("claude-sec"))
+                  }
+                  className="rounded border border-green-300 px-2 py-1 text-xs font-medium text-green-900 hover:bg-green-100"
+                >
+                  {copied === "claude-sec" ? "Copié" : "Copier Secret"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+          <h3 className="text-sm font-semibold text-green-900">
+            Claude Desktop (en-têtes, sans OAuth)
           </h3>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-green-900">
             <li>

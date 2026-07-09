@@ -6,7 +6,8 @@ export function GET(req: Request) {
   return Response.json(
     {
       resource: `${origin}/api/mcp`,
-      bearer_methods_supported: ["header", "body"],
+      authorization_servers: [origin],
+      bearer_methods_supported: ["header"],
     },
     {
       headers: {
