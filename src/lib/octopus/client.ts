@@ -293,22 +293,26 @@ async function obtainLongLivedRefreshToken(
   accessToken: string,
   fallback: { refreshToken: string; refreshExpiresIn: number }
 ): Promise<{ refreshToken: string; refreshExpiresIn: number }> {
-  const longLived = await graphqlRequest<{
-    obtainLongLivedRefreshToken?: {
-      refreshToken: string;
-      refreshExpiresIn: number;
-    };
-  }>(
-    accessToken,
-    MUTATION_LONG_LIVED_REFRESH,
-    { input: { krakenToken: accessToken } },
-    "generateLongLivedRefreshToken"
-  );
-  if (longLived.obtainLongLivedRefreshToken?.refreshToken) {
-    return {
-      refreshToken: longLived.obtainLongLivedRefreshToken.refreshToken,
-      refreshExpiresIn: longLived.obtainLongLivedRefreshToken.refreshExpiresIn,
-    };
+  try {
+    const longLived = await graphqlRequest<{
+      obtainLongLivedRefreshToken?: {
+        refreshToken: string;
+        refreshExpiresIn: number;
+      };
+    }>(
+      accessToken,
+      MUTATION_LONG_LIVED_REFRESH,
+      { input: { krakenToken: accessToken } },
+      "generateLongLivedRefreshToken"
+    );
+    if (longLived.obtainLongLivedRefreshToken?.refreshToken) {
+      return {
+        refreshToken: longLived.obtainLongLivedRefreshToken.refreshToken,
+        refreshExpiresIn: longLived.obtainLongLivedRefreshToken.refreshExpiresIn,
+      };
+    }
+  } catch {
+    // L'upgrade longue durée peut échouer après un refresh — le token court suffit.
   }
   return fallback;
 }
@@ -387,7 +391,7 @@ async function performLogin(): Promise<SessionState> {
   }>(
     null,
     MUTATION_LOGIN,
-    { input: { email: creds.email, password: creds.password } },
+    { input: { email, password } },
     "Login"
   );
 
