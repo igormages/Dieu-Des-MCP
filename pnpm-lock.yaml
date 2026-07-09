@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@clerk/mcp-tools':
-        specifier: ^0.5.0
-        version: 0.5.0(@clerk/nextjs@7.3.0(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(express@5.2.1)(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(redis@4.7.1)(zod@4.4.2)
       '@clerk/nextjs':
         specifier: ^7.2.2
         version: 7.3.0(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -161,32 +158,6 @@ packages:
   '@clerk/backend@3.4.4':
     resolution: {integrity: sha512-EGdpxBG1joIYzRBtpzTq2FGyM2ErSSF2UB7FZXrHiSb6V/uRUcvVcX7IWvYeEyg1AG100gJWr0KpbutajVCLMA==}
     engines: {node: '>=20.9.0'}
-
-  '@clerk/mcp-tools@0.5.0':
-    resolution: {integrity: sha512-phMaAffY/Jc0B84R59opIMJCHw/aMYtJZV/wmBzJSbLlbYkwdtNa8EECiIaHylvIfCd2j5vXuZBpBa7fOng0oQ==}
-    peerDependencies:
-      '@clerk/express': ^2.1.5
-      '@clerk/nextjs': ^7.2.3
-      better-sqlite3: ^8.7.0
-      express: ^5.0.0
-      next: ^15.2.8 || ^15.3.8 || ^15.4.10 || ^15.5.9 || ^15.6.0-0 || ^16.0.10 || ^16.1.0-0
-      pg: ^8.11.0
-      redis: ^4.0.0
-    peerDependenciesMeta:
-      '@clerk/express':
-        optional: true
-      '@clerk/nextjs':
-        optional: true
-      better-sqlite3:
-        optional: true
-      express:
-        optional: true
-      next:
-        optional: true
-      pg:
-        optional: true
-      redis:
-        optional: true
 
   '@clerk/nextjs@7.3.0':
     resolution: {integrity: sha512-Dip2oOVc720amG9bBZT1L9y7FoDJjRyz8MaGtbp2SUrtRuvaVq0WhHYzGTI1Nqy5tHMcnzEOSG7KsGf4FwIvzw==}
@@ -615,16 +586,6 @@ packages:
 
   '@modelcontextprotocol/sdk@1.26.0':
     resolution: {integrity: sha512-Y5RmPncpiDtTXDbLKswIJzTqu2hyBKxTNsgKqKclDbhIgg1wgtf1fRuvxgTnRfcnxtvvgbIEcqUOzZrJ6iSReg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@cfworker/json-schema': ^4.1.1
-      zod: ^3.25 || ^4.0
-    peerDependenciesMeta:
-      '@cfworker/json-schema':
-        optional: true
-
-  '@modelcontextprotocol/sdk@1.29.0':
-    resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -2823,19 +2784,6 @@ snapshots:
       - react
       - react-dom
 
-  '@clerk/mcp-tools@0.5.0(@clerk/nextjs@7.3.0(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(express@5.2.1)(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(redis@4.7.1)(zod@4.4.2)':
-    dependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.2)
-    optionalDependencies:
-      '@clerk/nextjs': 7.3.0(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      express: 5.2.1
-      next: 16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      redis: 4.7.1
-    transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - supports-color
-      - zod
-
   '@clerk/nextjs@7.3.0(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:
       '@clerk/backend': 3.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -3142,28 +3090,6 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@modelcontextprotocol/sdk@1.26.0(zod@4.4.2)':
-    dependencies:
-      '@hono/node-server': 1.19.14(hono@4.12.16)
-      ajv: 8.20.0
-      ajv-formats: 3.0.1(ajv@8.20.0)
-      content-type: 1.0.5
-      cors: 2.8.6
-      cross-spawn: 7.0.6
-      eventsource: 3.0.7
-      eventsource-parser: 3.0.8
-      express: 5.2.1
-      express-rate-limit: 8.4.1(express@5.2.1)
-      hono: 4.12.16
-      jose: 6.2.3
-      json-schema-typed: 8.0.2
-      pkce-challenge: 5.0.1
-      raw-body: 3.0.2
-      zod: 4.4.2
-      zod-to-json-schema: 3.25.2(zod@4.4.2)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.2)':
     dependencies:
       '@hono/node-server': 1.19.14(hono@4.12.16)
       ajv: 8.20.0

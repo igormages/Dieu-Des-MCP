@@ -1,6 +1,5 @@
-import { auth } from "@clerk/nextjs/server";
-import { verifyClerkToken } from "@clerk/mcp-tools/next";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { verifyMcpClientSecret } from "./mcp-credentials";
 
 const MCP_SCOPES = [
   "read:qonto",
@@ -33,33 +32,57 @@ const MCP_SCOPES = [
   "write:elevenlabs",
 ] as const;
 
+function toAuthInfo(clientId: string, token: string): AuthInfo {
+  return {
+    token,
+    scopes: [...MCP_SCOPES],
+    clientId,
+    extra: { clientId },
+  };
+}
+
+function parseBasicAuth(
+  authHeader: string
+): { clientId: string; secret: string } | null {
+  const encoded = authHeader.slice(6).trim();
+  if (!encoded) return null;
+
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+  const separator = decoded.indexOf(":");
+  if (separator <= 0) return null;
+
+  const clientId = decoded.slice(0, separator);
+  const secret = decoded.slice(separator + 1);
+  if (!clientId || !secret) return null;
+
+  return { clientId, secret };
+}
+
 export async function verifyBearerToken(
-  _req: Request,
+  req: Request,
   bearerToken?: string
 ): Promise<AuthInfo | undefined> {
-  if (!bearerToken) return undefined;
+  const authHeader = req.headers.get("Authorization");
 
-  const clerkAuth = await auth({
-    acceptsToken: ["oauth_token", "api_key"],
-  });
+  if (authHeader?.toLowerCase().startsWith("basic ")) {
+    const basic = parseBasicAuth(authHeader);
+    if (!basic) return undefined;
 
-  if (!clerkAuth.isAuthenticated) return undefined;
-
-  if (clerkAuth.tokenType === "oauth_token") {
-    return verifyClerkToken(clerkAuth, bearerToken);
+    const creds = await verifyMcpClientSecret(basic.secret, basic.clientId);
+    if (!creds) return undefined;
+    return toAuthInfo(creds.clientId, basic.secret);
   }
 
-  if (clerkAuth.tokenType === "api_key") {
-    const userId = clerkAuth.userId ?? clerkAuth.subject;
-    if (!userId) return undefined;
+  const token =
+    bearerToken ??
+    (authHeader?.toLowerCase().startsWith("bearer ")
+      ? authHeader.slice(7).trim()
+      : undefined);
 
-    return {
-      token: bearerToken,
-      scopes: clerkAuth.scopes?.length ? [...clerkAuth.scopes] : [...MCP_SCOPES],
-      clientId: userId,
-      extra: { userId },
-    };
-  }
+  if (!token) return undefined;
 
-  return undefined;
+  const creds = await verifyMcpClientSecret(token);
+  if (!creds) return undefined;
+
+  return toAuthInfo(creds.clientId, token);
 }

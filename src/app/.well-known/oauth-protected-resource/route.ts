@@ -1,12 +1,30 @@
-import {
-  protectedResourceHandlerClerk,
-  metadataCorsOptionsRequestHandler,
-} from "@clerk/mcp-tools/next";
+import { getPublicOrigin } from "mcp-handler";
 
-const handler = protectedResourceHandlerClerk({
-  scopes_supported: ["profile", "email", "openid"],
-});
+export function GET(req: Request) {
+  const origin = getPublicOrigin(req);
 
-const corsHandler = metadataCorsOptionsRequestHandler();
+  return Response.json(
+    {
+      resource: `${origin}/api/mcp`,
+      bearer_methods_supported: ["header", "body"],
+    },
+    {
+      headers: {
+        "Cache-Control": "max-age=3600",
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    }
+  );
+}
 
-export { handler as GET, corsHandler as OPTIONS };
+export function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
+}
