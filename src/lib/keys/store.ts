@@ -310,12 +310,6 @@ export const SERVICE_DEFINITIONS: Record<
         placeholder: "00000000-0002-4300-8085-000000000f88",
         required: false,
       },
-      {
-        key: "browserCookies",
-        label: "Cookies navigateur (si blocage Vercel)",
-        placeholder: "session=...; autre=... (depuis DevTools octopusenergy.fr)",
-        required: false,
-      },
     ],
   },
   leclercdrive: {
@@ -481,9 +475,6 @@ function getFromEnv(service: string): ServiceConfig | null {
           : {}),
         ...(process.env.OCTOPUS_DEVICE_ID
           ? { deviceId: process.env.OCTOPUS_DEVICE_ID }
-          : {}),
-        ...(process.env.OCTOPUS_BROWSER_COOKIES
-          ? { browserCookies: process.env.OCTOPUS_BROWSER_COOKIES }
           : {}),
       };
     }
