@@ -1,0 +1,19 @@
+docs/octopus-home-assistant-fr.md
+  s_65b4b1f86a2aa6::t_66f32e2b13df74 1-1059
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "c9cf9da48005558cbe085c65c8253903d8dfe506",
+  "prompts": {},
+  "sessions": {
+    "s_65b4b1f86a2aa6": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "c8044e5b-7c97-4164-8eda-65d8a1931a35",
+        "model": "composer-2.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
