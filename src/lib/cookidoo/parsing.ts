@@ -4,14 +4,19 @@
 
 export function decodeHtml(s: string): string {
   return s
-    .replace(/&#39;/g, "'")
-    .replace(/&#34;/g, '"')
-    .replace(/&amp;/g, "&")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(/&frac12;/g, "½")
+    .replace(/&frac14;/g, "¼")
+    .replace(/&frac34;/g, "¾")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#xA0;/g, " ")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\u00A0/g, " ");
 }
 
 export interface ShoppingListHtmlItem {
@@ -65,6 +70,9 @@ function extractShoppingItemId(block: string): string | null {
  */
 export function extractShoppingListItems(html: string): ShoppingListHtmlItem[] {
   const items: ShoppingListHtmlItem[] = [];
+  // La page rend les items « à acheter » deux fois (onglets par recette / par
+  // rayon) avec le même ULID : on déduplique sur l'ID.
+  const seen = new Set<string>();
   const liRegex =
     /<li\b[^>]*class="[^"]*pm-check-group__list-item[^"]*"[^>]*>[\s\S]*?<\/li>/g;
   for (const m of html.matchAll(liRegex)) {
@@ -76,10 +84,14 @@ export function extractShoppingListItems(html: string): ShoppingListHtmlItem[] {
         .trim()
     );
     if (!text) continue;
+    const id = extractShoppingItemId(block);
+    const key = id ?? `text:${text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     items.push({
       text,
       checked: detectCheckedState(block),
-      id: extractShoppingItemId(block),
+      id,
     });
   }
   return items;
