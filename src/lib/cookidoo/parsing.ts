@@ -98,6 +98,90 @@ export function extractShoppingListItems(html: string): ShoppingListHtmlItem[] {
 }
 
 /**
+ * Extrait les ingrédients ajoutés manuellement (additional-items, non liés à
+ * une recette). Leur markup diffère des ingrédients de recettes : on tente
+ * plusieurs stratégies (li dédié, web component, formulaire d'édition).
+ */
+export function extractAdditionalItems(html: string): ShoppingListHtmlItem[] {
+  const items: ShoppingListHtmlItem[] = [];
+  const seen = new Set<string>();
+
+  const push = (block: string, id: string | null) => {
+    let text = decodeHtml(
+      block
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+    if (!text) {
+      // Item éditable : le nom peut n'exister que dans la value d'un input.
+      const value = block.match(/<input[^>]*\bvalue="([^"]+)"/i)?.[1];
+      if (value?.trim()) text = decodeHtml(value.trim());
+    }
+    const resolvedId = id ?? extractShoppingItemId(block);
+    const key = resolvedId ?? `text:${text}`;
+    if (!text || seen.has(key)) return;
+    seen.add(key);
+    items.push({ text, checked: detectCheckedState(block), id: resolvedId });
+  };
+
+  // Stratégie 1 : li dont la classe mentionne "additional".
+  for (const m of html.matchAll(
+    /<li\b[^>]*class="[^"]*additional[^"]*"[^>]*>[\s\S]*?<\/li>/gi
+  )) {
+    push(m[0], null);
+  }
+  // Stratégie 2 : web component dédié.
+  if (items.length === 0) {
+    for (const m of html.matchAll(
+      /<([a-z]+-additional-item[a-z-]*)\b[\s\S]*?<\/\1>/gi
+    )) {
+      push(m[0], null);
+    }
+  }
+  // Stratégie 3 : formulaires d'édition additional-item/{id}/edit — le nom est
+  // dans un input value ou le texte du bloc.
+  if (items.length === 0) {
+    for (const m of html.matchAll(
+      /<form\b[^>]*additional-item\/(01[0-9A-HJKMNP-TV-Z]{24})[^>]*>([\s\S]*?)<\/form>/gi
+    )) {
+      const id = m[1];
+      const inner = m[2];
+      const nameValue =
+        inner.match(/<input[^>]*name="name"[^>]*value="([^"]*)"/i)?.[1] ??
+        inner.match(/<input[^>]*value="([^"]*)"[^>]*name="name"/i)?.[1];
+      const block = m[0];
+      if (nameValue) {
+        const key = id;
+        if (!seen.has(key) && nameValue.trim()) {
+          seen.add(key);
+          items.push({
+            text: decodeHtml(nameValue.trim()),
+            checked: detectCheckedState(block),
+            id,
+          });
+        }
+      } else {
+        push(block, id);
+      }
+    }
+  }
+  return items;
+}
+
+/**
+ * Échantillon brut autour de la première occurrence d'"additional-item" dans le
+ * HTML, pour diagnostiquer le markup des items manuels sans redéployer.
+ */
+export function sampleAdditionalItemHtml(html: string, window = 2500): string | null {
+  const idx = html.indexOf("additional-item");
+  if (idx === -1) return null;
+  return html
+    .slice(Math.max(0, idx - window / 2), idx + window)
+    .replace(/\s+/g, " ");
+}
+
+/**
  * Renvoie les premiers blocs `<li>` bruts de la liste de courses (tronqués),
  * pour diagnostiquer un HTML dont la structure ne correspond plus au parsing.
  */

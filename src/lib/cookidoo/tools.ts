@@ -16,8 +16,10 @@ import {
 } from "./customer-recipe-payloads";
 import {
   decodeHtml,
+  extractAdditionalItems,
   extractAllRecipeTiles,
   extractShoppingListItems,
+  sampleAdditionalItemHtml,
   sampleShoppingListBlocks,
 } from "./parsing";
 
@@ -431,30 +433,50 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_get_shopping_list",
-    "Récupère la liste de courses complète avec l'état de chaque item : checked=true (coché/possédé), checked=false (à acheter), et son ID (utilisable avec cookidoo_mark_ingredients_owned / cookidoo_unmark_ingredient_owned).",
+    "Récupère la liste de courses complète : ingrédients de recettes (items) + ajouts manuels (additionalItems), chacun avec checked=true (coché/possédé) ou false (à acheter) et son ID. Cocher/décocher : cookidoo_mark_ingredients_owned / cookidoo_unmark_ingredient_owned pour les items de recettes, cookidoo_update_custom_ingredient (isOwned) pour les ajouts manuels.",
     {},
     async () => {
       const html = await cookidooGetHtml(`/shopping/${COOKIDOO.language}`);
       const items = extractShoppingListItems(html);
-      const undetected = items.filter((i) => i.checked === null).length;
+      // Les ajouts manuels peuvent aussi matcher le sélecteur des ingrédients
+      // de recettes : dédup croisée par ID.
+      const recipeItemIds = new Set(items.map((i) => i.id).filter(Boolean));
+      const additionalItems = extractAdditionalItems(html).filter(
+        (i) => !i.id || !recipeItemIds.has(i.id)
+      );
+      const all = [...items, ...additionalItems];
+      const undetected = all.filter((i) => i.checked === null).length;
       const payload: Record<string, unknown> = {
-        count: items.length,
-        toBuyCount: items.filter((i) => i.checked === false).length,
-        checkedCount: items.filter((i) => i.checked === true).length,
+        count: all.length,
+        toBuyCount: all.filter((i) => i.checked === false).length,
+        checkedCount: all.filter((i) => i.checked === true).length,
         items,
+        additionalItems,
       };
-      if (items.length === 0) {
-        payload.note =
-          "La liste de courses est rendue côté client. Ajouter une recette via cookidoo_add_recipe_to_shopping_list pour récupérer ses ingrédients structurés en réponse.";
-      } else if (undetected === items.length) {
+      const notes: string[] = [];
+      if (all.length === 0) {
+        notes.push(
+          "La liste de courses est rendue côté client. Ajouter une recette via cookidoo_add_recipe_to_shopping_list pour récupérer ses ingrédients structurés en réponse."
+        );
+      } else if (undetected === all.length) {
         // Aucun signal coché/décoché reconnu : le markup a probablement changé.
         // On remonte un échantillon brut pour diagnostiquer sans redéployer.
-        payload.note =
-          "État coché/décoché non détectable dans le HTML actuel (structure inattendue). Échantillon brut ci-dessous.";
+        notes.push(
+          "État coché/décoché non détectable dans le HTML actuel (structure inattendue). Échantillon brut ci-dessous."
+        );
         payload.debugSample = sampleShoppingListBlocks(html);
       } else if (undetected > 0) {
-        payload.note = `${undetected} item(s) avec état coché indéterminé (checked=null).`;
+        notes.push(`${undetected} item(s) avec état coché indéterminé (checked=null).`);
       }
+      if (additionalItems.length === 0 && html.includes("additional-item")) {
+        // Le HTML mentionne des items manuels mais on n'en a extrait aucun :
+        // markup inattendu, on remonte un échantillon pour diagnostic.
+        notes.push(
+          "Le HTML mentionne des additional-items mais aucun n'a pu être extrait (markup inattendu). Échantillon ci-dessous."
+        );
+        payload.debugAdditionalSample = sampleAdditionalItemHtml(html);
+      }
+      if (notes.length > 0) payload.note = notes.join(" ");
       return {
         content: [
           {
