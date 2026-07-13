@@ -14,6 +14,92 @@ export function decodeHtml(s: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+export interface ShoppingListHtmlItem {
+  text: string;
+  /** true = coché (possédé), false = à acheter, null = état non détectable dans le HTML. */
+  checked: boolean | null;
+  /** ID de l'ingrédient/item (ULID) si présent dans le markup — utilisable avec les outils owned-ingredients / additional-item. */
+  id: string | null;
+}
+
+/** ULID Cookidoo (Crockford base32, 26 caractères commençant par 01). */
+const ULID_REGEX = /\b(01[0-9A-HJKMNP-TV-Z]{24})\b/;
+
+function detectCheckedState(block: string): boolean | null {
+  // 1. Attribut checked / aria-checked sur la checkbox de l'item.
+  const checkboxTags =
+    block.match(/<(?:input|core-checkbox|pm-checkbox)\b[^>]*>/gi) ?? [];
+  for (const tag of checkboxTags) {
+    if (/\schecked(?:\s|=|\/|>)/i.test(tag) || /aria-checked="true"/i.test(tag)) {
+      return true;
+    }
+  }
+  if (/aria-checked="true"/i.test(block)) return true;
+  // 2. Modificateurs BEM / classes d'état sur le li ou ses enfants.
+  if (
+    /class="[^"]*(?:--checked|--owned|--done|--striked|--strikethrough|is-checked|is-owned)[^"]*"/i.test(
+      block
+    )
+  ) {
+    return true;
+  }
+  // 3. Attributs data-* explicites.
+  if (/data-(?:is-)?owned="true"/i.test(block)) return true;
+  if (/data-(?:is-)?owned="false"/i.test(block)) return false;
+  // 4. Une checkbox existe mais sans aucun marqueur "coché" → non coché.
+  if (checkboxTags.length > 0 || /aria-checked="false"/i.test(block)) return false;
+  return null;
+}
+
+function extractShoppingItemId(block: string): string | null {
+  return (
+    block.match(/data-(?:ingredient-|item-)?id="([^"]+)"/i)?.[1] ??
+    block.match(ULID_REGEX)?.[1] ??
+    null
+  );
+}
+
+/**
+ * Extrait les items de la liste de courses depuis le HTML server-rendered de
+ * `/shopping/<lang>`, avec leur état coché/décoché et leur ID quand disponibles.
+ */
+export function extractShoppingListItems(html: string): ShoppingListHtmlItem[] {
+  const items: ShoppingListHtmlItem[] = [];
+  const liRegex =
+    /<li\b[^>]*class="[^"]*pm-check-group__list-item[^"]*"[^>]*>[\s\S]*?<\/li>/g;
+  for (const m of html.matchAll(liRegex)) {
+    const block = m[0];
+    const text = decodeHtml(
+      block
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+    if (!text) continue;
+    items.push({
+      text,
+      checked: detectCheckedState(block),
+      id: extractShoppingItemId(block),
+    });
+  }
+  return items;
+}
+
+/**
+ * Renvoie les premiers blocs `<li>` bruts de la liste de courses (tronqués),
+ * pour diagnostiquer un HTML dont la structure ne correspond plus au parsing.
+ */
+export function sampleShoppingListBlocks(html: string, count = 2, maxLen = 1500): string[] {
+  const liRegex =
+    /<li\b[^>]*class="[^"]*pm-check-group__list-item[^"]*"[^>]*>[\s\S]*?<\/li>/g;
+  const samples: string[] = [];
+  for (const m of html.matchAll(liRegex)) {
+    samples.push(m[0].replace(/\s+/g, " ").slice(0, maxLen));
+    if (samples.length >= count) break;
+  }
+  return samples;
+}
+
 function extractTileImageFromBlock(blockHtml: string): string | null {
   return (
     blockHtml.match(/data-src="([^"]+)"/)?.[1] ??

@@ -14,7 +14,12 @@ import {
   isCookidooCustomerRecipeId,
   normalizeCookidooYieldUnitText,
 } from "./customer-recipe-payloads";
-import { decodeHtml, extractAllRecipeTiles } from "./parsing";
+import {
+  decodeHtml,
+  extractAllRecipeTiles,
+  extractShoppingListItems,
+  sampleShoppingListBlocks,
+} from "./parsing";
 
 const ALGOLIA_APP_ID = "3TA8NT85XJ";
 const ALGOLIA_HOST = `${ALGOLIA_APP_ID.toLowerCase()}-dsn.algolia.net`;
@@ -426,38 +431,35 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_get_shopping_list",
-    "Récupère la liste de courses complète (ingrédients par recette + ajouts manuels + ingrédients possédés).",
+    "Récupère la liste de courses complète avec l'état de chaque item : checked=true (coché/possédé), checked=false (à acheter), et son ID (utilisable avec cookidoo_mark_ingredients_owned / cookidoo_unmark_ingredient_owned).",
     {},
     async () => {
       const html = await cookidooGetHtml(`/shopping/${COOKIDOO.language}`);
-      // Les ingrédients sont rendus côté client via une SPA.
-      // On essaie d'extraire ce qui est server-rendered, sinon on remonte le HTML brut tronqué.
-      const ingredientRegex =
-        /<li[^>]*class="[^"]*pm-check-group__list-item[^"]*"[^>]*>([\s\S]*?)<\/li>/g;
-      const items: string[] = [];
-      for (const m of html.matchAll(ingredientRegex)) {
-        const text = m[1]
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
-        if (text) items.push(decodeHtml(text));
+      const items = extractShoppingListItems(html);
+      const undetected = items.filter((i) => i.checked === null).length;
+      const payload: Record<string, unknown> = {
+        count: items.length,
+        toBuyCount: items.filter((i) => i.checked === false).length,
+        checkedCount: items.filter((i) => i.checked === true).length,
+        items,
+      };
+      if (items.length === 0) {
+        payload.note =
+          "La liste de courses est rendue côté client. Ajouter une recette via cookidoo_add_recipe_to_shopping_list pour récupérer ses ingrédients structurés en réponse.";
+      } else if (undetected === items.length) {
+        // Aucun signal coché/décoché reconnu : le markup a probablement changé.
+        // On remonte un échantillon brut pour diagnostiquer sans redéployer.
+        payload.note =
+          "État coché/décoché non détectable dans le HTML actuel (structure inattendue). Échantillon brut ci-dessous.";
+        payload.debugSample = sampleShoppingListBlocks(html);
+      } else if (undetected > 0) {
+        payload.note = `${undetected} item(s) avec état coché indéterminé (checked=null).`;
       }
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              {
-                count: items.length,
-                items,
-                note:
-                  items.length === 0
-                    ? "La liste de courses est rendue côté client. Ajouter une recette via cookidoo_add_recipe_to_shopping_list pour récupérer ses ingrédients structurés en réponse."
-                    : undefined,
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify(payload, null, 2),
           },
         ],
       };
