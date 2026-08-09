@@ -9,10 +9,14 @@ import {
   cookidooRequest,
 } from "./client";
 import {
+  applyAnnotatedVolume,
   buildIngredientsPayload,
   buildInstructionsPayload,
+  indexIngredientsByText,
   isCookidooCustomerRecipeId,
   normalizeCookidooYieldUnitText,
+  type AnnotateIngredientsResponseItem,
+  type IngredientPayload,
 } from "./customer-recipe-payloads";
 import {
   decodeHtml,
@@ -22,6 +26,41 @@ import {
   sampleAdditionalItemHtml,
   sampleShoppingListBlocks,
 } from "./parsing";
+
+/** Enrichit les lignes sans VOLUME via POST …/annotate/ingredients (fallback texte libre). */
+async function enrichIngredientsWithAnnotateApi(
+  ingredients: IngredientPayload[],
+  languageSample = ""
+): Promise<IngredientPayload[]> {
+  const targets = ingredients
+    .map((item, index) => ({ item, index }))
+    .filter(
+      ({ item }) =>
+        !item.annotations?.length &&
+        item.text.trim().length > 0 &&
+        // titres de section souvent sans chiffre ; on n’annote que les lignes avec quantité probable
+        /\d/.test(item.text)
+    );
+  if (!targets.length) return ingredients;
+
+  const annotated = await cookidooRequest<AnnotateIngredientsResponseItem[]>(
+    "POST",
+    `/created-recipes/${COOKIDOO.language}/annotate/ingredients`,
+    {
+      languageSample,
+      ingredients: targets.map((t) => t.item.text),
+    }
+  ).catch(() => null);
+
+  if (!Array.isArray(annotated) || !annotated.length) return ingredients;
+
+  const next = ingredients.slice();
+  targets.forEach((t, i) => {
+    const vol = annotated[i]?.annotations?.find((a) => a.type === "VOLUME");
+    if (vol) next[t.index] = applyAnnotatedVolume(next[t.index], vol);
+  });
+  return next;
+}
 
 const ALGOLIA_APP_ID = "3TA8NT85XJ";
 const ALGOLIA_HOST = `${ALGOLIA_APP_ID.toLowerCase()}-dsn.algolia.net`;
@@ -935,31 +974,99 @@ export function registerCookidooTools(server: McpServer): void {
 
   const ingredientSchema = z.object({
     name: z.string().describe("Nom de l'ingrédient."),
-    quantity: z.number().optional().describe("Quantité numérique."),
-    unit: z.string().optional().describe("Unité (g, ml, c. à café, pièce…)."),
+    quantity: z
+      .number()
+      .optional()
+      .describe(
+        "Quantité numérique. Obligatoire pour activer la balance Thermomix (annotation VOLUME)."
+      ),
+    quantityMax: z
+      .number()
+      .optional()
+      .describe("Borne haute optionnelle (ex. 2–3 → quantity=2, quantityMax=3)."),
+    unit: z
+      .string()
+      .optional()
+      .describe("Unité (g, ml, kg, c. à soupe…). Normalisée vers le code API VOLUME."),
     preparation: z.string().optional().describe("Préparation (ex: 'pelée et coupée en dés')."),
     optional: z.boolean().optional().describe("Si true, l'ingrédient est marqué optionnel."),
   });
 
+  const manualSchema = z
+    .object({
+      time: z.number().optional().describe("Durée en secondes."),
+      temperature: z
+        .union([z.number(), z.literal("Varoma"), z.literal("varoma"), z.literal("OFF")])
+        .optional()
+        .describe("Température °C, 'Varoma' ou 'OFF'."),
+      speed: z
+        .union([z.number(), z.literal("soft")])
+        .optional()
+        .describe("Vitesse 0.5–10 ou 'soft' (mijotage / fouet)."),
+      direction: z
+        .enum(["CW", "CCW", "normal", "reverse"])
+        .optional()
+        .describe("Sens : CW/normal ou CCW/reverse (sens inverse)."),
+    })
+    .describe("Réglages manuels Thermomix (annotation TTS) : temps / temp / vitesse / sens.");
+
+  const modeSchema = z
+    .object({
+      name: z
+        .enum([
+          "dough",
+          "browning",
+          "turbo",
+          "steaming",
+          "blend",
+          "warm_up",
+          "rice_cooker",
+        ])
+        .describe(
+          "Mode machine : dough=Pétrin, browning=Rissoler, turbo, steaming=Cuisson vapeur, blend=Mixage, warm_up=Réchauffer, rice_cooker."
+        ),
+      time: z.number().optional().describe("Durée en secondes (dough/turbo/steaming/blend/browning)."),
+      temperature: z
+        .union([z.number(), z.literal("Varoma"), z.literal("varoma"), z.literal("OFF")])
+        .optional()
+        .describe("Température pour warm_up / browning."),
+      speed: z.union([z.number(), z.literal("soft")]).optional(),
+      direction: z.enum(["CW", "CCW", "normal", "reverse"]).optional(),
+      accessory: z.string().optional().describe("Accessoire steaming (ex. Varoma)."),
+      power: z.string().optional().describe("Puissance browning (ex. Gentle)."),
+      pulseCount: z.number().optional().describe("Nombre d’impulsions turbo (TM6/TM7)."),
+    })
+    .describe("Mode prédéfini Thermomix (annotation MODE).");
+
   const stepSchema = z.object({
-    text: z.string().describe("Texte de l'étape (ex: 'Mixer pendant 10 sec/vit. 5')."),
-    time: z.number().optional().describe("Durée en secondes."),
+    text: z
+      .string()
+      .describe(
+        "Prose de l’étape. Inclure le texte exact des ingrédients liés (ex. '100 g farine') pour la balance."
+      ),
+    linkedIngredients: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Textes EXACTS des lignes d’ingrédients à lier dans cette étape (déclenche la balance sur Cookidoo)."
+      ),
+    manual: manualSchema.optional(),
+    mode: modeSchema.optional(),
+    // Compat champs plats historiques → mappés en TTS
+    time: z.number().optional().describe("Compat : durée s → manual.time."),
     temperature: z
       .union([z.number(), z.literal("Varoma"), z.literal("Ebullition")])
       .optional()
-      .describe("Température en °C, ou 'Varoma' / 'Ebullition'."),
+      .describe("Compat → manual.temperature."),
     speed: z
-      .union([z.number(), z.literal("Mijotage"), z.literal("Petrir")])
+      .union([z.number(), z.literal("Mijotage"), z.literal("Petrir"), z.literal("soft")])
       .optional()
-      .describe("Vitesse Thermomix (1-10), 'Mijotage' ou 'Petrir' (épi)."),
+      .describe("Compat → manual.speed."),
     direction: z
-      .enum(["normal", "reverse"])
+      .enum(["normal", "reverse", "CW", "CCW"])
       .optional()
-      .describe("Sens de rotation (normal ou inverse / sens inverse pour ne pas couper)."),
-    accessory: z
-      .string()
-      .optional()
-      .describe("Accessoire (fouet, panier de cuisson, Varoma, papillon...)."),
+      .describe("Compat → manual.direction."),
+    accessory: z.string().optional().describe("Compat / accessoire mode steaming."),
   });
 
   const recipePayloadSchema = {
@@ -967,12 +1074,12 @@ export function registerCookidooTools(server: McpServer): void {
     description: z.string().optional().describe("Description courte."),
     portion: z
       .object({
-        quantity: z.number().describe("Nombre de portions."),
+        quantity: z.number().describe("Nombre de portions / pièces / etc."),
         type: z
           .string()
           .optional()
           .describe(
-            "Texte unité pour l’API (`yield.unitText`) : valeur fermée côté Cookidoo ; `portion` est sûr. Synonymes courants (portions, personnes) sont normalisés en `portion`."
+            "yield.unitText API : portion|piece|glass|gram|jar|litre|ounce|slice|cup|bottle. Synonymes FR (portions, morceaux, verres…) normalisés."
           ),
       })
       .optional(),
@@ -986,13 +1093,19 @@ export function registerCookidooTools(server: McpServer): void {
             .string()
             .optional()
             .describe(
-              "Nom du groupe (ex: 'Pour la pâte'). Envoyé comme une ligne INGREDIENT contenant uniquement ce texte (l'API Cookidoo n'expose pas de type dédié pour les titres de section)."
+              "Nom du groupe (ex: 'Pour la pâte'). Ligne INGREDIENT texte seul, sans VOLUME."
             ),
           ingredients: z.array(ingredientSchema).describe("Ingrédients du groupe."),
         })
       )
-      .describe("Groupes d'ingrédients."),
-    steps: z.array(stepSchema).describe("Étapes de préparation."),
+      .describe(
+        "Groupes d’ingrédients. Fournir quantity+unit pour chaque ligne pesable (annotation VOLUME)."
+      ),
+    steps: z
+      .array(stepSchema)
+      .describe(
+        "Étapes avec linkedIngredients (balance), manual (TTS) et/ou mode (MODE). Ne pas mettre seulement du texte pour une cuisson TM."
+      ),
     tips: z.string().optional().describe("Astuces et conseils."),
     tags: z.array(z.string()).optional().describe("Catégories / tags (ex: ['Plat principal'])."),
     tmversion: z
@@ -1003,10 +1116,9 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_create_recipe",
-    "Crée une nouvelle recette personnelle Thermomix complète (titre, ingrédients, étapes avec settings TM, photo optionnelle).",
+    "Crée une recette perso Cookidoo complète. IMPORTANT : chaque ingrédient pesable doit avoir quantity (+ unit) pour VOLUME ; chaque étape qui utilise un ingrédient doit le lister dans linkedIngredients (texte exact) pour afficher la balance ; les cuissons TM passent par manual (temps/temp/vitesse/sens) ou mode (dough, warm_up, rice_cooker, turbo, steaming, blend, browning) — pas du texte seul.",
     recipePayloadSchema,
     async (input) => {
-      // Étape 1 : créer le squelette avec le titre uniquement
       const created = await cookidooRequest<{ recipeId?: string }>(
         "POST",
         `/created-recipes/${COOKIDOO.language}`,
@@ -1020,13 +1132,19 @@ export function registerCookidooTools(server: McpServer): void {
         );
       const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
 
-      const ingredients = buildIngredientsPayload(input.ingredientGroups);
+      let ingredients = buildIngredientsPayload(input.ingredientGroups);
+      ingredients = await enrichIngredientsWithAnnotateApi(
+        ingredients,
+        input.steps[0]?.text ?? ""
+      );
       await cookidooRequest("PATCH", base, { ingredients });
 
-      const instructions = buildInstructionsPayload(input.steps);
+      const instructions = buildInstructionsPayload(
+        input.steps,
+        indexIngredientsByText(ingredients)
+      );
       await cookidooRequest("PATCH", base, { instructions });
 
-      // Étape 4 : PATCH paramètres (temps, portions, version TM, description, etc.)
       const settings: Record<string, unknown> = {};
       if (input.totalTime !== undefined) settings.totalTime = input.totalTime;
       if (input.prepTime !== undefined) settings.prepTime = input.prepTime;
@@ -1062,7 +1180,7 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_update_recipe",
-    "Met à jour une recette personnelle existante (mêmes champs que la création).",
+    "Met à jour une recette perso (mêmes règles que create : VOLUME sur ingrédients, linkedIngredients + manual/mode sur les étapes).",
     {
       recipeId: z.string().describe("ULID de la recette personnelle à modifier."),
       ...recipePayloadSchema,
@@ -1071,10 +1189,17 @@ export function registerCookidooTools(server: McpServer): void {
       const { recipeId, ...rest } = input;
       const base = `/created-recipes/${COOKIDOO.language}/${recipeId}`;
 
-      const ingredients = buildIngredientsPayload(rest.ingredientGroups);
+      let ingredients = buildIngredientsPayload(rest.ingredientGroups);
+      ingredients = await enrichIngredientsWithAnnotateApi(
+        ingredients,
+        rest.steps[0]?.text ?? ""
+      );
       await cookidooRequest("PATCH", base, { ingredients });
 
-      const instructions = buildInstructionsPayload(rest.steps);
+      const instructions = buildInstructionsPayload(
+        rest.steps,
+        indexIngredientsByText(ingredients)
+      );
       await cookidooRequest("PATCH", base, { instructions });
 
       const settings: Record<string, unknown> = { recipeName: rest.title };

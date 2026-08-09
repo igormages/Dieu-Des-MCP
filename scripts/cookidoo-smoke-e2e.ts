@@ -39,7 +39,7 @@ async function main(): Promise<void> {
       import("../src/lib/cookidoo/customer-recipe-payloads"),
       import("../src/lib/cookidoo/parsing"),
     ]);
-  const { buildIngredientsPayload, buildInstructionsPayload } = payload;
+  const { buildIngredientsPayload, buildInstructionsPayload, indexIngredientsByText } = payload;
   const { extractAllRecipeTiles } = parsing;
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -72,19 +72,30 @@ async function main(): Promise<void> {
       ],
     },
   ];
+  const ingredients = buildIngredientsPayload(ingredientGroups);
+  const farineText = ingredients.find((i) => i.text.includes("farine"))!.text;
+  const eauText = ingredients.find((i) => i.text.includes("eau"))!.text;
   const steps = [
     { text: "Mélanger." },
     {
-      text: "Cuire 5 min / 100°C / vit. 2.",
-      time: 300,
-      temperature: 100,
-      speed: 2,
+      text: `Ajouter ${farineText} et ${eauText} dans le bol.`,
+      linkedIngredients: [farineText, eauText],
+    },
+    {
+      text: "Cuire",
+      manual: { time: 300, temperature: 100, speed: 2 },
+    },
+    {
+      text: "Pétrir",
+      mode: { name: "dough" as const, time: 120 },
     },
   ];
 
   console.log("3) PATCH ingrédients + instructions (+ réglages)…");
-  await cookidooRequest("PATCH", base, { ingredients: buildIngredientsPayload(ingredientGroups) });
-  await cookidooRequest("PATCH", base, { instructions: buildInstructionsPayload(steps) });
+  await cookidooRequest("PATCH", base, { ingredients });
+  await cookidooRequest("PATCH", base, {
+    instructions: buildInstructionsPayload(steps, indexIngredientsByText(ingredients)),
+  });
   await cookidooRequest("PATCH", base, {
     totalTime: 600,
     prepTime: 120,
