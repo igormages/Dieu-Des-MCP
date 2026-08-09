@@ -1,0 +1,32 @@
+src/lib/cookidoo/customer-recipe-payloads.test.ts
+  s_bac37978e79c4f::t_97c55139ea9c92 4-5,8-10,13,24,27-29,33-42,50-83,85,89-92,95,98-102,105-203,208-234
+  s_bac37978e79c4f::t_a3aa55bd066477 84
+  s_bac37978e79c4f::t_05725663ac6895 204-207
+src/lib/cookidoo/customer-recipe-payloads.ts
+  s_bac37978e79c4f::t_acbd2a5e517b69 6-18,20,26-367,371-372,374-409,412-413,418,420-421,425,431-439,442-465,468-469,472-473,475-524,526-546,548-554,556-575
+scripts/cookidoo-smoke-e2e.ts
+  s_bac37978e79c4f::t_716f60a4322954 75-77,81-90,95-96,98
+  s_bac37978e79c4f::t_c59af4c672fc65 97
+  s_bac37978e79c4f::t_bff68feb65cf41 42
+src/lib/cookidoo/tools.ts
+  s_bac37978e79c4f::t_25684ee4ab3886 977-990,995-1040,1042-1056,1060,1062,1064,1066,1068-1069,1077,1082,1096,1101-1108,1119,1135-1139,1142-1145,1183,1192-1196,1199-1202
+  s_bac37978e79c4f::t_6b6e86bb71bef7 12,15,18-19,30-40,42-63
+  s_bac37978e79c4f::t_6fba73d8167523 41
+  s_bac37978e79c4f::t_ede0fef1f65f24 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "b75ce6f20d031b61617d63c68dfbc9482a2e85c1",
+  "prompts": {},
+  "sessions": {
+    "s_bac37978e79c4f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "24418837-4c50-48c8-a413-9a018f6074ce",
+        "model": "grok-4.5"
+      },
+      "human_author": "Igor Magès <igor@mages.pro>"
+    }
+  }
+}
