@@ -17,6 +17,13 @@ const SESSION_TTL_SECONDS = 60 * 60 * 4;
 const SESSION_REVALIDATE_AFTER_MS = 60 * 60 * 1000; // 1h
 /** Nombre d'essais maximum sur une requête (1 essai initial + 2 re-login). */
 const MAX_REQUEST_ATTEMPTS = 3;
+/**
+ * Longueur max du corps d'erreur remonté. Les 400 de `created-recipes` sont des
+ * rapports de validation JSON Schema qui listent chaque branche du `anyOf` : la
+ * seule ligne exploitable (ex. « data must have required property 'time' ») se
+ * trouve souvent après plusieurs centaines de caractères de bruit.
+ */
+const MAX_ERROR_BODY_CHARS = 4000;
 
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
@@ -554,7 +561,7 @@ export async function cookidooRequest<T = unknown>(
       const errText = await result.response.text().catch(() => "");
       lastError = `${status} ${errText.slice(0, 150)}`;
       if (!autoRelogin || attempt >= MAX_REQUEST_ATTEMPTS) {
-        throw new Error(`Cookidoo ${status}: ${errText.slice(0, 200)}`);
+        throw new Error(`Cookidoo ${status}: ${errText.slice(0, MAX_ERROR_BODY_CHARS)}`);
       }
       // On force un re-login (qui rafraîchit aussi le XSRF).
       state = await getOrCreateSession(true);
@@ -564,7 +571,7 @@ export async function cookidooRequest<T = unknown>(
     if (status >= 400) {
       const errText = await result.response.text().catch(() => "");
       throw new Error(
-        `Cookidoo erreur ${status} sur ${method} ${path} : ${errText.slice(0, 300)}`
+        `Cookidoo erreur ${status} sur ${method} ${path} : ${errText.slice(0, MAX_ERROR_BODY_CHARS)}`
       );
     }
 
