@@ -69,6 +69,7 @@ export type VolumeAnnotation = {
   type: "VOLUME";
   data: {
     amount: number;
+    /** Toujours émis côté écriture (= `amount` sans fourchette). */
     amountMax?: number;
     unit: string;
     unitText: string;
@@ -108,6 +109,8 @@ export type StepAnnotation =
               text: string;
               annotations: VolumeAnnotation[];
             };
+        /** Obligatoire côté éditeur : liste vide quand il n'y a pas de note. */
+        notes: string[];
       };
       position: { offset: number; length: number };
     };
@@ -116,6 +119,11 @@ export type InstructionStepPayload = {
   type: "STEP";
   text: string;
   annotations?: StepAnnotation[];
+  /**
+   * Usages détectés mais non rattachés. On n'en émet jamais : tout ingrédient
+   * lié est ancré dans le texte (sinon il est rendu en texte traînant sur TM7).
+   */
+  missedUsages: never[];
 };
 
 export type ManualSettings = {
@@ -178,47 +186,90 @@ const MODE_ICONS: Record<CookidooModeName, string> = {
   rice_cooker: COOKIDOO_ICONS.riceCooker,
 };
 
-/** Normalise une unité d’ingrédient vers codes API (`unit` / `unitText`). */
+/**
+ * Unité par défaut quand une quantité est fournie sans unité.
+ *
+ * Cookidoo répond `500 unexpectederrors` sur le PATCH dès qu'une annotation
+ * VOLUME porte une unité vide : une quantité nue doit donc toujours être
+ * comptée en pièces.
+ */
+export const DEFAULT_INGREDIENT_UNIT = "piece";
+
+/** Code API → notation affichée (référentiel éditeur fr-FR). */
+const UNIT_NOTATIONS_FR: Record<string, string> = {
+  g: "g",
+  kg: "kg",
+  mg: "mg",
+  ml: "ml",
+  cl: "cl",
+  dl: "dl",
+  l: "l",
+  tsp: "c. à café",
+  tbsp: "c. à soupe",
+  pinch: "pincée",
+  piece: "pièce",
+};
+
+const UNIT_ALIASES: Record<string, string> = {
+  g: "g",
+  gr: "g",
+  gramme: "g",
+  grammes: "g",
+  mg: "mg",
+  kg: "kg",
+  kilo: "kg",
+  kilos: "kg",
+  kilogramme: "kg",
+  kilogrammes: "kg",
+  ml: "ml",
+  millilitre: "ml",
+  millilitres: "ml",
+  l: "l",
+  litre: "l",
+  litres: "l",
+  liter: "l",
+  liters: "l",
+  cl: "cl",
+  dl: "dl",
+  "c. à café": "tsp",
+  "c. a café": "tsp",
+  "c. a cafe": "tsp",
+  "cuillère à café": "tsp",
+  "cuillere a cafe": "tsp",
+  "c.a.c": "tsp",
+  "c.à.c": "tsp",
+  cac: "tsp",
+  tsp: "tsp",
+  "c. à soupe": "tbsp",
+  "c. a soupe": "tbsp",
+  "cuillère à soupe": "tbsp",
+  "cuillere a soupe": "tbsp",
+  "c.a.s": "tbsp",
+  "c.à.s": "tbsp",
+  cas: "tbsp",
+  tbsp: "tbsp",
+  pincée: "pinch",
+  pincee: "pinch",
+  pincées: "pinch",
+  pinch: "pinch",
+  pièce: "piece",
+  piece: "piece",
+  pièces: "piece",
+  pieces: "piece",
+  morceau: "piece",
+  morceaux: "piece",
+};
+
+/**
+ * Normalise une unité d’ingrédient : `unit` = code API, `unitText` = notation
+ * affichée dans la ligne d’ingrédient et sur la puce de pesée (fr-FR).
+ * Une unité inconnue est transmise telle quelle sur les deux champs.
+ */
 export function normalizeIngredientUnit(unit?: string | null): { unit: string; unitText: string } {
   const raw = (unit ?? "").trim();
   if (!raw) return { unit: "", unitText: "" };
-  const lower = raw.toLowerCase();
-  const map: Record<string, string> = {
-    g: "g",
-    gr: "g",
-    gramme: "g",
-    grammes: "g",
-    kg: "kg",
-    kilogramme: "kg",
-    kilogrammes: "kg",
-    ml: "ml",
-    millilitre: "ml",
-    millilitres: "ml",
-    l: "l",
-    litre: "l",
-    litres: "l",
-    cl: "cl",
-    dl: "dl",
-    "c. à café": "tsp",
-    "c.a.c": "tsp",
-    "c.à.c": "tsp",
-    cac: "tsp",
-    tsp: "tsp",
-    "c. à soupe": "tbsp",
-    "c.a.s": "tbsp",
-    "c.à.s": "tbsp",
-    cas: "tbsp",
-    tbsp: "tbsp",
-    pincée: "pinch",
-    pincee: "pinch",
-    pinch: "pinch",
-    pièce: "piece",
-    piece: "piece",
-    pièces: "piece",
-    pieces: "piece",
-  };
-  const code = map[lower] ?? raw;
-  return { unit: code, unitText: code };
+  const code = UNIT_ALIASES[raw.toLowerCase()] ?? raw;
+  return { unit: code, unitText: UNIT_NOTATIONS_FR[code] ?? code };
 }
 
 export function formatCookidooTime(seconds: number): string {
@@ -334,21 +385,134 @@ function buildModeData(mode: ModeSettings): Record<string, unknown> {
   return data;
 }
 
-function appendChip(text: string, chip: string): { text: string; offset: number; length: number } {
+function appendChip(
+  text: string,
+  chip: string,
+  separator = "\u00A0"
+): { text: string; offset: number; length: number } {
   const trimmed = text.replace(/\s+$/u, "");
-  const prefix = trimmed.length === 0 ? "" : /[\s\u00A0]$/u.test(text) ? text : `${trimmed}\u00A0`;
+  const prefix =
+    trimmed.length === 0 ? "" : /[\s\u00A0]$/u.test(text) ? text : `${trimmed}${separator}`;
   const full = `${prefix}${chip}`;
   return { text: full, offset: prefix.length, length: chip.length };
 }
 
-function findSubstringPosition(
-  haystack: string,
-  needle: string
-): { offset: number; length: number } | null {
+type Span = { offset: number; length: number };
+
+function overlaps(span: Span, used: Span[]): boolean {
+  const end = span.offset + span.length;
+  return used.some((u) => !(end <= u.offset || span.offset >= u.offset + u.length));
+}
+
+/**
+ * Replie une cha\u00EEne pour la recherche approximative : minuscules, sans accents,
+ * apostrophes et espaces ins\u00E9cables uniformis\u00E9s. La transformation est faite
+ * caract\u00E8re par caract\u00E8re pour pr\u00E9server les offsets du texte d\u2019origine.
+ */
+function fold(input: string): string {
+  let out = "";
+  for (const ch of input) {
+    if (ch === "\u2019" || ch === "\u2018" || ch === "\u02BC") {
+      out += "'";
+      continue;
+    }
+    if (ch === "\u00A0" || ch === "\u202F") {
+      out += " ";
+      continue;
+    }
+    const stripped = ch.normalize("NFD").replace(/\p{M}+/gu, "");
+    const base = stripped.length === ch.length ? stripped : ch;
+    const lower = base.toLowerCase();
+    out += lower.length === ch.length ? lower : base;
+  }
+  return out;
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/** `indexOf` sur des fronti\u00E8res de mot (les deux cha\u00EEnes sont d\u00E9j\u00E0 repli\u00E9es). */
+function indexOfWord(haystack: string, needle: string, from = 0): number {
+  if (!needle) return -1;
+  for (let i = haystack.indexOf(needle, from); i >= 0; i = haystack.indexOf(needle, i + 1)) {
+    const before = i > 0 ? haystack[i - 1] : "";
+    const after = haystack[i + needle.length] ?? "";
+    const startsWord = !WORD_CHAR.test(needle[0]) || !WORD_CHAR.test(before);
+    // Le pluriel/la flexion sont tol\u00E9r\u00E9s en fin de mot (\u00AB poivron \u00BB \u2192 \u00AB poivrons \u00BB).
+    const endsWord = !WORD_CHAR.test(needle[needle.length - 1]) || !/[\p{N}]/u.test(after);
+    if (startsWord && endsWord) return i;
+  }
+  return -1;
+}
+
+function containsWord(haystack: string, needle: string): boolean {
+  return indexOfWord(haystack, needle) >= 0;
+}
+
+/** Fin du mot commencé avant `index` (pour couvrir « poivron » → « poivrons »). */
+function wordEnd(text: string, index: number): number {
+  let end = index;
+  while (end < text.length && WORD_CHAR.test(text[end])) end++;
+  return end;
+}
+
+/** Mots portants d\u2019un nom d\u2019ingr\u00E9dient (\u00AB filet de poulet, sans peau \u00BB \u2192 poulet, filet). */
+const FR_STOPWORDS = new Set([
+  "de", "des", "du", "la", "le", "les", "un", "une", "et", "ou", "en", "au", "aux",
+  "sans", "avec", "pour", "dans", "sur", "bien", "gros", "grosse", "petit", "petite",
+  "facultatif", "environ", "type", "frais", "fraiche", "fraiches", "surgele", "surgelee",
+]);
+
+function significantWords(name: string): string[] {
+  return Array.from(new Set(fold(name).split(/[^\p{L}\p{N}]+/u)))
+    .filter((w) => w.length >= 4 && !FR_STOPWORDS.has(w))
+    .sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Localise dans `text` la mention d\u2019un ingr\u00E9dient li\u00E9. On tente la ligne
+ * compl\u00E8te, le texte fourni, le libell\u00E9, le nom nu, puis les mots portants
+ * du nom \u2014 d\u2019abord tel quel, puis en comparaison repli\u00E9e (accents, casse,
+ * \u00E9lision \u00AB d' \u00BB / \u00AB l' \u00BB).
+ */
+function findIngredientAnchor(
+  text: string,
+  linked: string,
+  entry: IngredientIndexEntry | null,
+  used: Span[]
+): Span | null {
+  const candidates = [entry?.text, linked, entry?.label, entry?.name].filter(
+    (c): c is string => Boolean(c?.trim())
+  );
+  // `fold` conserve la longueur caractère par caractère : les offsets trouvés
+  // dans le texte replié sont directement valables sur le texte d’origine.
+  const passes = [
+    { haystack: text, needles: candidates.map((c) => c.trim()) },
+    {
+      haystack: fold(text),
+      needles: [...candidates, ...significantWords(entry?.name ?? linked)].map((c) =>
+        fold(c).trim()
+      ),
+    },
+  ];
+  for (const { haystack, needles } of passes) {
+    for (const needle of needles) {
+      if (!needle) continue;
+      for (let i = indexOfWord(haystack, needle); i >= 0; i = indexOfWord(haystack, needle, i + 1)) {
+        const span = { offset: i, length: wordEnd(haystack, i + needle.length) - i };
+        if (!overlaps(span, used)) return span;
+      }
+    }
+  }
+  return null;
+}
+
+function findSubstringPosition(haystack: string, needle: string, used: Span[] = []): Span | null {
   if (!needle) return null;
-  const offset = haystack.indexOf(needle);
-  if (offset < 0) return null;
-  return { offset, length: needle.length };
+  for (let i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + 1)) {
+    const span = { offset: i, length: needle.length };
+    if (!overlaps(span, used)) return span;
+  }
+  return null;
 }
 
 function resolveManual(step: StepInput): ManualSettings | undefined {
@@ -370,38 +534,49 @@ function resolveManual(step: StepInput): ManualSettings | undefined {
 /**
  * Construit une ligne INGREDIENT + annotation VOLUME si quantité fournie.
  * `position` couvre le préfixe quantité (+ unité) dans le texte.
+ *
+ * Une quantité sans unité tombe sur {@link DEFAULT_INGREDIENT_UNIT} : Cookidoo
+ * rejette (500) tout VOLUME dont l’unité est vide.
  */
 export function buildIngredientLine(i: IngredientInput): IngredientPayload {
+  const hasQuantity = i.quantity !== undefined;
+  const normalized = normalizeIngredientUnit(i.unit);
+  const { unit, unitText } =
+    hasQuantity && !normalized.unit
+      ? normalizeIngredientUnit(DEFAULT_INGREDIENT_UNIT)
+      : normalized;
+
   const qtyParts: string[] = [];
-  if (i.quantity !== undefined) {
-    if (i.quantityMax !== undefined && i.quantityMax !== i.quantity) {
-      qtyParts.push(`${i.quantity}-${i.quantityMax}`);
-    } else {
-      qtyParts.push(String(i.quantity));
-    }
+  if (hasQuantity) {
+    qtyParts.push(
+      i.quantityMax !== undefined && i.quantityMax !== i.quantity
+        ? `${i.quantity}-${i.quantityMax}`
+        : String(i.quantity)
+    );
   }
-  const { unit, unitText } = normalizeIngredientUnit(i.unit);
   if (unit) qtyParts.push(unitText || unit);
 
   const qtyPrefix = qtyParts.join(" ");
-  const rest: string[] = [i.name];
-  if (i.preparation) rest.push(`(${i.preparation})`);
-  if (i.optional) rest.push("(facultatif)");
-  const text = [qtyPrefix, ...rest].filter(Boolean).join(" ").trim();
+  // La préparation suit le nom après une virgule, comme les lignes d’ingrédients
+  // officielles (« 80 g d'emmental, coupé en morceaux ») : le TM7 la rend alors
+  // sur sa propre ligne sous la puce de pesée.
+  let label = i.name.trim();
+  if (i.preparation?.trim()) label += `, ${i.preparation.trim()}`;
+  if (i.optional) label += " (facultatif)";
+  const text = [qtyPrefix, label].filter(Boolean).join(" ").trim();
 
   const item: IngredientPayload = { type: "INGREDIENT", text };
-  if (i.quantity !== undefined) {
-    const volumeData: VolumeAnnotation["data"] = {
-      amount: i.quantity,
-      unit: unit || "",
-      unitText: unitText || unit || "",
-    };
-    if (i.quantityMax !== undefined) volumeData.amountMax = i.quantityMax;
+  if (hasQuantity) {
     item.annotations = [
       {
         type: "VOLUME",
-        data: volumeData,
-        position: { offset: 0, length: qtyPrefix.length || String(i.quantity).length },
+        data: {
+          amount: i.quantity as number,
+          amountMax: i.quantityMax ?? (i.quantity as number),
+          unit,
+          unitText: unitText || unit,
+        },
+        position: { offset: 0, length: qtyPrefix.length },
       },
     ];
   }
@@ -428,39 +603,101 @@ export function buildIngredientsPayload(
   return items;
 }
 
-/** Index texte → payload ingrédient (pour enrichir les liens d’étapes). */
-export function indexIngredientsByText(
-  ingredients: IngredientPayload[]
-): Map<string, IngredientPayload> {
-  const map = new Map<string, IngredientPayload>();
-  for (const ing of ingredients) {
-    map.set(ing.text, ing);
-  }
-  return map;
+export type IngredientIndexEntry = {
+  item: IngredientPayload;
+  /** Ligne complète, ex. « 800 g eau, tiède ». */
+  text: string;
+  /** Ligne sans le préfixe quantité, ex. « eau, tiède ». */
+  label: string;
+  /** Nom nu, sans préparation ni mention facultative, ex. « eau ». */
+  name: string;
+};
+
+/** Index des lignes d’ingrédients, utilisé pour ancrer les liens d’étapes. */
+export type IngredientIndex = IngredientIndexEntry[];
+
+/**
+ * Construit l’index des lignes d’ingrédients à partir du payload envoyé à
+ * Cookidoo. Le préfixe quantité est retiré via la `position` de l’annotation
+ * VOLUME, ce qui donne le libellé puis le nom nu utilisés pour retrouver
+ * l’ingrédient cité dans une étape.
+ */
+export function indexIngredientsByText(ingredients: IngredientPayload[]): IngredientIndex {
+  return ingredients.map((item) => {
+    const volume = item.annotations?.find((a) => a.type === "VOLUME");
+    const label = (
+      volume ? item.text.slice(volume.position.offset + volume.position.length) : item.text
+    ).trim();
+    const name = label
+      .split(",")[0]
+      .replace(/\((?:[^()]*)\)/gu, " ")
+      .trim();
+    return { item, text: item.text, label, name: name || label };
+  });
 }
 
-function buildIngredientLinkDescription(
+/**
+ * Retrouve la ligne d’ingrédient visée par un `linkedIngredients[i]`.
+ * L’API MCP accepte aussi bien le texte exact de la ligne (« 800 g eau ») que
+ * le simple nom (« eau ») : on compare sur le texte, le libellé et le nom, en
+ * insensible à la casse, aux accents et à la ponctuation.
+ */
+function resolveLinkedIngredient(
+  linked: string,
+  index: IngredientIndex | undefined
+): IngredientIndexEntry | null {
+  if (!index?.length) return null;
+  const needle = fold(linked).trim();
+  if (!needle) return null;
+
+  const exact = index.find((e) => e.text === linked);
+  if (exact) return exact;
+
+  const fields = (e: IngredientIndexEntry) => [e.text, e.label, e.name];
+  const equal = index.find((e) => fields(e).some((f) => fold(f).trim() === needle));
+  if (equal) return equal;
+
+  // Correspondance partielle : on garde le candidat au nom le plus long, pour
+  // éviter qu'« ail » ne capture « ail des ours » (ou l'inverse).
+  let best: { entry: IngredientIndexEntry; score: number } | null = null;
+  for (const entry of index) {
+    for (const field of fields(entry)) {
+      const hay = fold(field).trim();
+      if (!hay) continue;
+      if (!containsWord(hay, needle) && !containsWord(needle, hay)) continue;
+      // Départage en faveur d’une vraie ligne pesable plutôt qu’un titre de groupe.
+      const score = Math.min(hay.length, needle.length) + (entry.item.annotations?.length ? 0.5 : 0);
+      if (!best || score > best.score) best = { entry, score };
+    }
+  }
+  return best?.entry ?? null;
+}
+
+/** Construit l’annotation d’usage d’ingrédient (puce de pesée de l’étape). */
+function buildIngredientUsage(
   linkedText: string,
-  ingredientIndex?: Map<string, IngredientPayload>
-): StepAnnotation & { type: "INGREDIENT" } {
-  const source = ingredientIndex?.get(linkedText);
-  const volume = source?.annotations?.find((a) => a.type === "VOLUME");
-  if (volume) {
+  entry: IngredientIndexEntry | null,
+  position: { offset: number; length: number }
+): Extract<StepAnnotation, { type: "INGREDIENT" }> {
+  const volume = entry?.item.annotations?.find((a) => a.type === "VOLUME");
+  // La description porte la ligne d’ingrédient complète (quantité + unité +
+  // préparation) : c'est elle qui fait apparaître le poids sur la puce et qui
+  // déclenche la balance. Sans VOLUME (ligne sans quantité), on retombe sur la
+  // forme texte simple acceptée par l'éditeur.
+  if (entry && volume) {
     return {
       type: "INGREDIENT",
       data: {
-        description: {
-          text: linkedText,
-          annotations: [volume],
-        },
+        description: { text: entry.text, annotations: [volume] },
+        notes: [],
       },
-      position: { offset: 0, length: linkedText.length },
+      position,
     };
   }
   return {
     type: "INGREDIENT",
-    data: { description: linkedText },
-    position: { offset: 0, length: linkedText.length },
+    data: { description: entry?.text ?? linkedText, notes: [] },
+    position,
   };
 }
 
@@ -470,23 +707,42 @@ function buildIngredientLinkDescription(
  */
 export function buildInstructionsPayload(
   steps: StepInput[],
-  ingredientIndex?: Map<string, IngredientPayload>
+  ingredientIndex?: IngredientIndex
 ): InstructionStepPayload[] {
   return steps.map((s) => buildOneInstruction(s, ingredientIndex));
 }
 
 function buildOneInstruction(
   step: StepInput,
-  ingredientIndex?: Map<string, IngredientPayload>
+  ingredientIndex?: IngredientIndex
 ): InstructionStepPayload {
   let text = step.text ?? "";
   const annotations: StepAnnotation[] = [];
+  const used: Span[] = [];
+
+  // Les usages d’ingrédients sont ancrés en premier : les chips TTS/MODE sont
+  // ajoutés en fin de texte et ne doivent pas décaler les offsets déjà posés.
+  for (const linked of step.linkedIngredients ?? []) {
+    const needle = linked.trim();
+    if (!needle) continue;
+    const entry = resolveLinkedIngredient(needle, ingredientIndex);
+    let pos = findIngredientAnchor(text, needle, entry, used);
+    if (!pos) {
+      // Aucune occurrence : on ancre le nom en fin d’étape plutôt que de le
+      // laisser en `missedUsages` (rendu en texte traînant sur TM7).
+      const appended = appendChip(text, entry?.name ?? needle, " ");
+      text = appended.text;
+      pos = { offset: appended.offset, length: appended.length };
+    }
+    used.push(pos);
+    annotations.push(buildIngredientUsage(needle, entry, pos));
+  }
 
   const manual = resolveManual(step);
   if (manual && hasManualContent(manual)) {
     const chip = formatTtsChip(manual);
     if (chip) {
-      let pos = findSubstringPosition(text, chip);
+      let pos = findSubstringPosition(text, chip, used);
       if (!pos) {
         const appended = appendChip(text, chip);
         text = appended.text;
@@ -503,18 +759,20 @@ function buildOneInstruction(
       else if (dir === "CW") {
         /* CW souvent omis dans le HAR TTS ; on l’envoie seulement si explicitement utile */
       }
+      used.push(pos);
       annotations.push({ type: "TTS", data, position: pos });
     }
   }
 
   if (step.mode) {
     const chip = formatModeChip(step.mode);
-    let pos = findSubstringPosition(text, chip);
+    let pos = findSubstringPosition(text, chip, used);
     if (!pos) {
       const appended = appendChip(text, chip);
       text = appended.text;
       pos = { offset: appended.offset, length: appended.length };
     }
+    used.push(pos);
     annotations.push({
       type: "MODE",
       name: step.mode.name,
@@ -526,22 +784,11 @@ function buildOneInstruction(
   // Compat accessoire seul sans mode/manual : pas d’annotation dédiée dans le HAR ;
   // si steaming via mode.accessory c’est déjà dans MODE data.
 
-  for (const linked of step.linkedIngredients ?? []) {
-    const needle = linked.trim();
-    if (!needle) continue;
-    let pos = findSubstringPosition(text, needle);
-    if (!pos) {
-      const appended = appendChip(text, needle);
-      text = appended.text;
-      pos = { offset: appended.offset, length: appended.length };
-    }
-    const link = buildIngredientLinkDescription(needle, ingredientIndex);
-    link.position = pos;
-    annotations.push(link);
+  const out: InstructionStepPayload = { type: "STEP", text, missedUsages: [] };
+  if (annotations.length) {
+    // L’éditeur envoie les annotations dans l’ordre du texte.
+    out.annotations = annotations.sort((a, b) => a.position.offset - b.position.offset);
   }
-
-  const out: InstructionStepPayload = { type: "STEP", text };
-  if (annotations.length) out.annotations = annotations;
   return out;
 }
 
@@ -573,3 +820,69 @@ export type AnnotateIngredientsResponseItem = {
   text?: string;
   annotations?: VolumeAnnotation[];
 };
+
+/** Réponse de `GET /created-recipes/{lang}/{id}` (tout est sous `recipeContent`). */
+export type CustomerRecipeResponse = {
+  recipeId?: string;
+  authorId?: string;
+  status?: string;
+  workStatus?: string;
+  createdAt?: string;
+  modifiedAt?: string;
+  recipeContent?: Record<string, unknown>;
+};
+
+function asTextList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => {
+      if (typeof v === "string") return v;
+      if (v && typeof v === "object" && typeof (v as { text?: unknown }).text === "string") {
+        return (v as { text: string }).text;
+      }
+      return "";
+    })
+    .filter((s) => s.trim().length > 0);
+}
+
+function firstOf(source: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+/**
+ * Normalise une recette perso au format des recettes officielles (clés
+ * schema.org du JSON-LD) pour que `cookidoo_get_recipe_detail` renvoie la même
+ * forme quelle que soit la source. Les clés brutes varient selon les marchés
+ * (`ingredients` / `recipeIngredient`), on accepte les deux.
+ */
+export function normalizeCustomerRecipe(
+  recipeId: string,
+  body: CustomerRecipeResponse
+): Record<string, unknown> {
+  const content = body.recipeContent ?? {};
+  const ingredients = asTextList(firstOf(content, "recipeIngredient", "ingredients"));
+  const instructionsRaw = firstOf(content, "recipeInstructions", "instructions");
+  const instructions = asTextList(instructionsRaw);
+  const recipeYield = firstOf(content, "recipeYield", "yield");
+
+  return {
+    "@type": "Recipe",
+    identifier: body.recipeId ?? recipeId,
+    name: firstOf(content, "name", "recipeName", "title") ?? null,
+    description: firstOf(content, "description") ?? null,
+    image: firstOf(content, "image") ?? null,
+    recipeYield: recipeYield ?? null,
+    prepTime: firstOf(content, "prepTime") ?? null,
+    totalTime: firstOf(content, "totalTime") ?? null,
+    tool: firstOf(content, "tool", "tools") ?? null,
+    recipeCategory: firstOf(content, "recipeCategory", "tags") ?? null,
+    recipeIngredient: ingredients,
+    recipeInstructions: instructions,
+    /** Étapes brutes avec leurs annotations (TTS/MODE/INGREDIENT) telles que stockées. */
+    instructionsWithAnnotations: Array.isArray(instructionsRaw) ? instructionsRaw : [],
+  };
+}

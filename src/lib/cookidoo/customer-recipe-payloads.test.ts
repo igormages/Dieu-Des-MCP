@@ -10,6 +10,7 @@ import {
   indexIngredientsByText,
   isCookidooCustomerRecipeId,
   normalizeCookidooYieldUnitText,
+  normalizeCustomerRecipe,
   normalizeIngredientUnit,
 } from "./customer-recipe-payloads";
 
@@ -31,10 +32,19 @@ describe("normalizeCookidooYieldUnitText", () => {
 });
 
 describe("normalizeIngredientUnit", () => {
-  it("mappe g / ml / c. à soupe", () => {
+  it("mappe le code API et la notation FR affichée", () => {
     assert.deepEqual(normalizeIngredientUnit("grammes"), { unit: "g", unitText: "g" });
     assert.deepEqual(normalizeIngredientUnit("ml"), { unit: "ml", unitText: "ml" });
-    assert.deepEqual(normalizeIngredientUnit("c. à soupe"), { unit: "tbsp", unitText: "tbsp" });
+    assert.deepEqual(normalizeIngredientUnit("c. à soupe"), {
+      unit: "tbsp",
+      unitText: "c. à soupe",
+    });
+    assert.deepEqual(normalizeIngredientUnit("pièces"), { unit: "piece", unitText: "pièce" });
+  });
+
+  it("laisse passer une unité inconnue", () => {
+    assert.deepEqual(normalizeIngredientUnit("botte"), { unit: "botte", unitText: "botte" });
+    assert.deepEqual(normalizeIngredientUnit(), { unit: "", unitText: "" });
   });
 });
 
@@ -52,7 +62,7 @@ describe("buildIngredientsPayload + VOLUME", () => {
     assert.deepEqual(out[1].annotations, [
       {
         type: "VOLUME",
-        data: { amount: 50, unit: "g", unitText: "g" },
+        data: { amount: 50, amountMax: 50, unit: "g", unitText: "g" },
         position: { offset: 0, length: "50 g".length },
       },
     ]);
@@ -60,8 +70,37 @@ describe("buildIngredientsPayload + VOLUME", () => {
 
   it("buildIngredientLine avec quantityMax", () => {
     const line = buildIngredientLine({ name: "oeufs", quantity: 2, quantityMax: 3, unit: "pièce" });
-    assert.equal(line.text, "2-3 piece oeufs");
+    assert.equal(line.text, "2-3 pièce oeufs");
     assert.equal(line.annotations?.[0].data.amountMax, 3);
+  });
+
+  // Bug 1 : Cookidoo répond 500 unexpectederrors sur un VOLUME à unité vide.
+  it("quantité sans unité → pièce (jamais d’unité vide)", () => {
+    const line = buildIngredientLine({ name: "oignon", quantity: 1 });
+    assert.equal(line.text, "1 pièce oignon");
+    assert.deepEqual(line.annotations, [
+      {
+        type: "VOLUME",
+        data: { amount: 1, amountMax: 1, unit: "piece", unitText: "pièce" },
+        position: { offset: 0, length: "1 pièce".length },
+      },
+    ]);
+  });
+
+  it("sans quantité → aucune annotation VOLUME", () => {
+    const line = buildIngredientLine({ name: "sel" });
+    assert.equal(line.text, "sel");
+    assert.equal(line.annotations, undefined);
+  });
+
+  it("la préparation suit le nom après une virgule", () => {
+    const line = buildIngredientLine({
+      name: "emmental",
+      quantity: 80,
+      unit: "g",
+      preparation: "coupé en morceaux",
+    });
+    assert.equal(line.text, "80 g emmental, coupé en morceaux");
   });
 });
 
@@ -89,7 +128,9 @@ describe("formatters TTS / time", () => {
 describe("buildInstructionsPayload (HAR)", () => {
   it("étape texte seul", () => {
     const out = buildInstructionsPayload([{ text: "étape texte seulement" }]);
-    assert.deepEqual(out, [{ type: "STEP", text: "étape texte seulement" }]);
+    assert.deepEqual(out, [
+      { type: "STEP", text: "étape texte seulement", missedUsages: [] },
+    ]);
   });
 
   it("TTS via champs plats compat", () => {
@@ -181,17 +222,12 @@ describe("buildInstructionsPayload (HAR)", () => {
     ]);
     const index = indexIngredientsByText(ingredients);
     const linked1 = ingredients[0].text;
-    const linked2 = ingredients[1].text;
 
     const out = buildInstructionsPayload(
       [
         {
           text: `ajouter ${linked1} coupé en morceaux en julienne`,
           linkedIngredients: [linked1],
-        },
-        {
-          text: `${linked1.replace("1", "2")} et ${linked2.replace("ingrédient 2", "de ingredient 3")} dans le pot`,
-          linkedIngredients: [linked2],
         },
       ],
       index
@@ -207,6 +243,12 @@ describe("buildInstructionsPayload (HAR)", () => {
       };
       assert.equal(desc.text, linked1);
       assert.equal(desc.annotations[0]?.type, "VOLUME");
+      assert.deepEqual(a0.data.notes, []);
+      // La position couvre la mention dans le texte de l’étape, pas la description.
+      assert.equal(
+        out[0].text.slice(a0.position.offset, a0.position.offset + a0.position.length),
+        linked1
+      );
     }
   });
 
@@ -232,5 +274,183 @@ describe("buildInstructionsPayload (HAR)", () => {
     );
     const links = out[0].annotations?.filter((a) => a.type === "INGREDIENT") ?? [];
     assert.equal(links.length, 2);
+    // Deux annotations distinctes, jamais superposées.
+    assert.notEqual(links[0].position.offset, links[1].position.offset);
+  });
+});
+
+// Bug 2 : la puce d’étape doit porter le poids et déclencher la balance, même
+// quand l’étape est écrite en prose et que `linkedIngredients` ne contient que
+// le nom de l’ingrédient.
+describe("buildInstructionsPayload — usages d’ingrédients (pesée)", () => {
+  const ingredients = buildIngredientsPayload([
+    {
+      ingredients: [
+        { name: "eau", quantity: 800, unit: "g" },
+        { name: "poivron rouge", quantity: 1, preparation: "coupé en lanières" },
+        { name: "riz basmati", quantity: 250, unit: "g" },
+        { name: "filet de poulet", quantity: 400, unit: "g", preparation: "sans peau" },
+      ],
+    },
+  ]);
+  const index = indexIngredientsByText(ingredients);
+
+  function usages(step: Parameters<typeof buildInstructionsPayload>[0][number]) {
+    const out = buildInstructionsPayload([step], index)[0];
+    const links = (out.annotations ?? []).filter((a) => a.type === "INGREDIENT");
+    return { out, links };
+  }
+
+  it("un nom seul donne une puce « 800 g eau » ancrée sur la mention", () => {
+    const { out, links } = usages({
+      text: "Mettre l'eau dans le bol.",
+      linkedIngredients: ["eau"],
+    });
+    assert.equal(out.text, "Mettre l'eau dans le bol.");
+    assert.deepEqual(out.missedUsages, []);
+    assert.equal(links.length, 1);
+    const link = links[0];
+    assert.ok(link.type === "INGREDIENT");
+    if (link.type === "INGREDIENT") {
+      const desc = link.data.description as { text: string; annotations: unknown[] };
+      assert.equal(desc.text, "800 g eau");
+      assert.deepEqual(desc.annotations, [
+        {
+          type: "VOLUME",
+          data: { amount: 800, amountMax: 800, unit: "g", unitText: "g" },
+          position: { offset: 0, length: "800 g".length },
+        },
+      ]);
+      assert.equal(out.text.slice(link.position.offset, link.position.offset + link.position.length), "eau");
+    }
+  });
+
+  it("ancre malgré accents, casse et pluriel", () => {
+    const { out, links } = usages({
+      text: "Ajouter les Poivrons rouges puis mélanger.",
+      linkedIngredients: ["poivron rouge"],
+    });
+    assert.equal(out.text, "Ajouter les Poivrons rouges puis mélanger.");
+    assert.equal(links.length, 1);
+    assert.equal(
+      out.text.slice(links[0].position.offset, links[0].position.offset + links[0].position.length),
+      "Poivrons"
+    );
+  });
+
+  it("un nom absent du texte est ajouté puis annoté (jamais de texte non ancré)", () => {
+    const { out, links } = usages({
+      text: "Mettre le reste dans le bol.",
+      linkedIngredients: ["riz basmati"],
+    });
+    assert.ok(out.text.endsWith("riz basmati"));
+    assert.equal(links.length, 1);
+    assert.equal(
+      out.text.slice(links[0].position.offset, links[0].position.offset + links[0].position.length),
+      "riz basmati"
+    );
+    assert.deepEqual(out.missedUsages, []);
+  });
+
+  it("s’ancre sur un mot porteur quand le nom complet n’est pas cité", () => {
+    const { out, links } = usages({
+      text: "Faire dorer le poulet 5 minutes.",
+      linkedIngredients: ["filet de poulet, sans peau"],
+    });
+    assert.equal(out.text, "Faire dorer le poulet 5 minutes.");
+    assert.equal(links.length, 1);
+    assert.equal(
+      out.text.slice(links[0].position.offset, links[0].position.offset + links[0].position.length),
+      "poulet"
+    );
+    const desc = links[0].type === "INGREDIENT" ? links[0].data.description : null;
+    assert.equal((desc as { text: string }).text, "400 g filet de poulet, sans peau");
+  });
+
+  it("les annotations TTS/MODE cohabitent avec les usages et restent triées", () => {
+    const { out } = usages({
+      text: "Cuire l'eau à la vapeur.",
+      linkedIngredients: ["eau"],
+      mode: { name: "steaming", time: 1200 },
+    });
+    const types = (out.annotations ?? []).map((a) => a.type);
+    assert.deepEqual(types, ["INGREDIENT", "MODE"]);
+    const offsets = (out.annotations ?? []).map((a) => a.position.offset);
+    assert.deepEqual(offsets, [...offsets].sort((a, b) => a - b));
+    const mode = out.annotations?.find((a) => a.type === "MODE");
+    assert.ok(mode);
+    if (mode) {
+      assert.equal(
+        out.text.slice(mode.position.offset, mode.position.offset + mode.position.length),
+        `Cuisson vapeur ${COOKIDOO_ICONS.steaming}/20 min`
+      );
+    }
+  });
+
+  it("n’ancre pas sur un fragment de mot", () => {
+    const idx = indexIngredientsByText(
+      buildIngredientsPayload([{ ingredients: [{ name: "sel", quantity: 1, unit: "pincée" }] }])
+    );
+    const out = buildInstructionsPayload(
+      [{ text: "Suivre ce conseil avant de servir.", linkedIngredients: ["sel"] }],
+      idx
+    )[0];
+    // « sel » n’apparaît pas comme mot : on l’ajoute en fin d’étape au lieu de
+    // pointer l’intérieur de « conseil ».
+    assert.ok(out.text.endsWith("sel"));
+    const link = out.annotations?.find((a) => a.type === "INGREDIENT");
+    assert.ok(link);
+    if (link) {
+      assert.equal(out.text.slice(link.position.offset, link.position.offset + link.position.length), "sel");
+    }
+  });
+
+  it("sans index, la description reste le texte fourni", () => {
+    const out = buildInstructionsPayload([
+      { text: "Ajouter le sel.", linkedIngredients: ["sel"] },
+    ])[0];
+    const link = out.annotations?.find((a) => a.type === "INGREDIENT");
+    assert.ok(link && link.type === "INGREDIENT");
+    if (link?.type === "INGREDIENT") {
+      assert.equal(link.data.description, "sel");
+      assert.deepEqual(link.data.notes, []);
+    }
+  });
+});
+
+describe("normalizeCustomerRecipe", () => {
+  it("normalise la réponse created-recipes vers le format schema.org", () => {
+    const out = normalizeCustomerRecipe("01KQSFHCSFX63R85KHW78ZZ4XY", {
+      recipeId: "01KQSFHCSFX63R85KHW78ZZ4XY",
+      recipeContent: {
+        name: "Dahl",
+        ingredients: [{ type: "INGREDIENT", text: "800 g eau" }],
+        instructions: [
+          { type: "STEP", text: "Mettre l'eau", annotations: [{ type: "INGREDIENT" }] },
+        ],
+        yield: { value: 4, unitText: "portion" },
+        totalTime: 1800,
+      },
+    });
+    assert.equal(out.name, "Dahl");
+    assert.equal(out.identifier, "01KQSFHCSFX63R85KHW78ZZ4XY");
+    assert.deepEqual(out.recipeIngredient, ["800 g eau"]);
+    assert.deepEqual(out.recipeInstructions, ["Mettre l'eau"]);
+    assert.deepEqual(out.recipeYield, { value: 4, unitText: "portion" });
+    assert.equal((out.instructionsWithAnnotations as unknown[]).length, 1);
+  });
+
+  it("accepte aussi les clés schema.org renvoyées par certains marchés", () => {
+    const out = normalizeCustomerRecipe("01KQSFHCSFX63R85KHW78ZZ4XY", {
+      recipeContent: {
+        recipeName: "Compote",
+        recipeIngredient: ["3 pièce pommes"],
+        recipeInstructions: ["Éplucher"],
+        recipeYield: { value: 2, unitText: "portion" },
+      },
+    });
+    assert.equal(out.name, "Compote");
+    assert.deepEqual(out.recipeIngredient, ["3 pièce pommes"]);
+    assert.deepEqual(out.recipeInstructions, ["Éplucher"]);
   });
 });

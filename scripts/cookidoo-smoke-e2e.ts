@@ -69,6 +69,8 @@ async function main(): Promise<void> {
       ingredients: [
         { name: "farine", quantity: 100, unit: "g" },
         { name: "eau", quantity: 50, unit: "ml" },
+        // Bug 1 : quantité sans unité → doit repartir en « 1 pièce … », pas en 500.
+        { name: "feuille de laurier", quantity: 1 },
       ],
     },
   ];
@@ -80,6 +82,11 @@ async function main(): Promise<void> {
     {
       text: `Ajouter ${farineText} et ${eauText} dans le bol.`,
       linkedIngredients: [farineText, eauText],
+    },
+    // Bug 2 : prose naturelle + lien par simple nom → puce pesée « 50 ml eau ».
+    {
+      text: "Verser l'eau puis ajouter le laurier.",
+      linkedIngredients: ["eau", "feuille de laurier"],
     },
     {
       text: "Cuire",
@@ -152,6 +159,21 @@ async function main(): Promise<void> {
     isImageOwnedByUser: false,
   });
   console.log("   Image OK :", `${upJson.public_id}.${upJson.format}`);
+
+  console.log("3c) Relecture GET /created-recipes (round-trip annotations)…");
+  const readBack = await cookidooRequest<{ recipeContent?: Record<string, unknown> }>(
+    "GET",
+    base,
+    undefined,
+    { skipXsrf: true, referer: `${COOKIDOO.origin}${base}` }
+  );
+  const content = readBack?.recipeContent ?? {};
+  const storedSteps = (content.instructions ?? content.recipeInstructions) as unknown[] | undefined;
+  console.log(
+    "   ingrédients :",
+    JSON.stringify(content.ingredients ?? content.recipeIngredient)?.slice(0, 300)
+  );
+  console.log("   étapes (annotations brutes) :", JSON.stringify(storedSteps, null, 2)?.slice(0, 2000));
 
   console.log("4) Liste « Mes créations » (HTML)…");
   const html = await cookidooGetHtml(`/created-recipes/${COOKIDOO.language}`);
