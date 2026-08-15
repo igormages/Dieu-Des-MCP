@@ -370,6 +370,49 @@ function formatModeChip(mode: ModeSettings): string {
   }
 }
 
+type ModeDataKey =
+  | "time"
+  | "temperature"
+  | "speed"
+  | "direction"
+  | "accessory"
+  | "power"
+  | "pulseCount";
+
+/**
+ * Contrat `data` de chaque MODE, relevé sur les 400 `validationError` de
+ * l'API (le `oneOf` a une branche par mode, avec ses `required`).
+ *
+ * `defaults` ne couvre que les valeurs figées par le programme machine
+ * (vapeur = vitesse 1 / sens horaire / Varoma, rissoler = 160 °C, turbo =
+ * impulsion d'1 s) : elles sont sûres à compléter. Les champs qui portent
+ * l'intention de l'utilisateur (durée, température de réchauffage) restent
+ * exigés, avec une erreur explicite plutôt qu'un 400 opaque.
+ */
+const MODE_CONTRACTS: Record<
+  CookidooModeName,
+  { required: ModeDataKey[]; defaults?: Partial<ModeSettings> }
+> = {
+  dough: { required: ["time"] },
+  rice_cooker: { required: [] },
+  blend: { required: ["time", "speed"], defaults: { speed: 5 } },
+  browning: {
+    required: ["time", "temperature", "power"],
+    defaults: { temperature: 160, power: "Gentle" },
+  },
+  warm_up: { required: ["time", "temperature", "speed"], defaults: { speed: 1 } },
+  turbo: { required: ["time", "pulseCount"], defaults: { time: 1, pulseCount: 1 } },
+  steaming: {
+    required: ["time", "speed", "direction", "accessory"],
+    defaults: { speed: 1, direction: "CW", accessory: "Varoma" },
+  },
+};
+
+/** Applique les valeurs figées du programme machine avant sérialisation. */
+export function withModeDefaults(mode: ModeSettings): ModeSettings {
+  return { ...MODE_CONTRACTS[mode.name]?.defaults, ...mode };
+}
+
 function buildModeData(mode: ModeSettings): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   if (mode.time !== undefined) data.time = mode.time;
@@ -382,6 +425,16 @@ function buildModeData(mode: ModeSettings): Record<string, unknown> {
   if (mode.accessory?.trim()) data.accessory = mode.accessory.trim();
   if (mode.power?.trim()) data.power = mode.power.trim();
   if (mode.pulseCount !== undefined) data.pulseCount = mode.pulseCount;
+
+  const missing = (MODE_CONTRACTS[mode.name]?.required ?? []).filter(
+    (key) => data[key] === undefined
+  );
+  if (missing.length) {
+    throw new Error(
+      `Cookidoo : le mode « ${mode.name} » exige ${missing.join(", ")} dans data. ` +
+        `Renseigne ${missing.map((m) => `mode.${m}`).join(", ")} sur cette étape.`
+    );
+  }
   return data;
 }
 
@@ -765,7 +818,8 @@ function buildOneInstruction(
   }
 
   if (step.mode) {
-    const chip = formatModeChip(step.mode);
+    const mode = withModeDefaults(step.mode);
+    const chip = formatModeChip(mode);
     let pos = findSubstringPosition(text, chip, used);
     if (!pos) {
       const appended = appendChip(text, chip);
@@ -775,8 +829,8 @@ function buildOneInstruction(
     used.push(pos);
     annotations.push({
       type: "MODE",
-      name: step.mode.name,
-      data: buildModeData(step.mode),
+      name: mode.name,
+      data: buildModeData(mode),
       position: pos,
     });
   }

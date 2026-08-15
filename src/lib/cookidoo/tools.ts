@@ -1065,18 +1065,44 @@ export function registerCookidooTools(server: McpServer): void {
         .describe(
           "Mode machine : dough=Pétrin, browning=Rissoler, turbo, steaming=Cuisson vapeur, blend=Mixage, warm_up=Réchauffer, rice_cooker."
         ),
-      time: z.number().optional().describe("Durée en secondes (dough/turbo/steaming/blend/browning)."),
+      time: z
+        .number()
+        .optional()
+        .describe(
+          "Durée en secondes. OBLIGATOIRE sauf rice_cooker. Pour turbo c'est la durée d'une impulsion (défaut 1 s)."
+        ),
       temperature: z
         .union([z.number(), z.literal("Varoma"), z.literal("varoma"), z.literal("OFF")])
         .optional()
-        .describe("Température pour warm_up / browning."),
-      speed: z.union([z.number(), z.literal("soft")]).optional(),
-      direction: z.enum(["CW", "CCW", "normal", "reverse"]).optional(),
-      accessory: z.string().optional().describe("Accessoire steaming (ex. Varoma)."),
-      power: z.string().optional().describe("Puissance browning (ex. Gentle)."),
-      pulseCount: z.number().optional().describe("Nombre d’impulsions turbo (TM6/TM7)."),
+        .describe(
+          "Température. OBLIGATOIRE pour warm_up. Pour browning, figée à 160 °C par le programme (complétée automatiquement)."
+        ),
+      speed: z
+        .union([z.number(), z.literal("soft")])
+        .optional()
+        .describe(
+          "Vitesse. Complétée automatiquement quand le programme la fige : blend=5, warm_up=1, steaming=1."
+        ),
+      direction: z
+        .enum(["CW", "CCW", "normal", "reverse"])
+        .optional()
+        .describe("Sens. Figé à CW pour steaming (complété automatiquement)."),
+      accessory: z
+        .string()
+        .optional()
+        .describe("Accessoire steaming. Figé à 'Varoma' (complété automatiquement)."),
+      power: z
+        .string()
+        .optional()
+        .describe("Puissance browning (Gentle / Intense). Défaut 'Gentle'."),
+      pulseCount: z
+        .number()
+        .optional()
+        .describe("Nombre d’impulsions turbo (TM6/TM7). Défaut 1."),
     })
-    .describe("Mode prédéfini Thermomix (annotation MODE).");
+    .describe(
+      "Mode prédéfini Thermomix (annotation MODE). Chaque mode a des `data` obligatoires côté API : dough/blend/browning/warm_up/steaming exigent time ; warm_up exige aussi temperature. Les valeurs figées par le programme machine sont complétées automatiquement."
+    );
 
   const stepSchema = z.object({
     text: z

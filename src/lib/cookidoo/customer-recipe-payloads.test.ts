@@ -173,6 +173,44 @@ describe("buildInstructionsPayload (HAR)", () => {
     }
   });
 
+  // Contrats `data` relevés en live sur les 400 validationError de l'API.
+  it("MODE : complète les valeurs figées du programme machine", () => {
+    const out = buildInstructionsPayload([
+      { text: "Vapeur.", mode: { name: "steaming", time: 1200 } },
+      { text: "Rissoler.", mode: { name: "browning", time: 300 } },
+      { text: "Turbo.", mode: { name: "turbo" } },
+      { text: "Mixer.", mode: { name: "blend", time: 60 } },
+    ]);
+    const dataOf = (i: number) => {
+      const a = out[i].annotations?.find((x) => x.type === "MODE");
+      return a && a.type === "MODE" ? a.data : null;
+    };
+    assert.deepEqual(dataOf(0), {
+      time: 1200,
+      speed: "1",
+      direction: "CW",
+      accessory: "Varoma",
+    });
+    assert.deepEqual(dataOf(1), {
+      time: 300,
+      temperature: { value: "160", unit: "C" },
+      power: "Gentle",
+    });
+    assert.deepEqual(dataOf(2), { time: 1, pulseCount: 1 });
+    assert.deepEqual(dataOf(3), { time: 60, speed: "5" });
+  });
+
+  it("MODE : erreur explicite si un champ d’intention manque", () => {
+    assert.throws(
+      () => buildInstructionsPayload([{ text: "Réchauffer.", mode: { name: "warm_up" } }]),
+      /warm_up[\s\S]*time, temperature/
+    );
+    assert.throws(
+      () => buildInstructionsPayload([{ text: "Pétrir.", mode: { name: "dough" } }]),
+      /dough[\s\S]*time/
+    );
+  });
+
   it("MODE rice_cooker", () => {
     const out = buildInstructionsPayload([
       { text: "voici un autre mode", mode: { name: "rice_cooker" } },
@@ -184,13 +222,15 @@ describe("buildInstructionsPayload (HAR)", () => {
 
   it("MODE warm_up", () => {
     const out = buildInstructionsPayload([
-      { text: "", mode: { name: "warm_up", temperature: 65, speed: 1 } },
+      { text: "", mode: { name: "warm_up", time: 600, temperature: 65 } },
     ]);
     const mode = out[0].annotations?.find((a) => a.type === "MODE");
     assert.ok(mode && mode.type === "MODE");
     if (mode?.type === "MODE") {
       assert.equal(mode.name, "warm_up");
+      assert.equal(mode.data.time, 600);
       assert.deepEqual(mode.data.temperature, { value: "65", unit: "C" });
+      // vitesse figée par le programme, complétée automatiquement
       assert.equal(mode.data.speed, "1");
     }
   });
