@@ -516,8 +516,11 @@ const FR_STOPWORDS = new Set([
 ]);
 
 function significantWords(name: string): string[] {
+  // Seuil à 3 : beaucoup d'ingrédients courants sont des mots courts (riz, ail,
+  // sel, thé, jus, vin). Les faux positifs sont écartés par la recherche sur
+  // frontières de mot (« sel » ne s'ancre pas dans « conseil »).
   return Array.from(new Set(fold(name).split(/[^\p{L}\p{N}]+/u)))
-    .filter((w) => w.length >= 4 && !FR_STOPWORDS.has(w))
+    .filter((w) => w.length >= 3 && !FR_STOPWORDS.has(w))
     .sort((a, b) => b.length - a.length);
 }
 
@@ -936,7 +939,13 @@ export function normalizeCustomerRecipe(
     recipeCategory: firstOf(content, "recipeCategory", "tags") ?? null,
     recipeIngredient: ingredients,
     recipeInstructions: instructions,
-    /** Étapes brutes avec leurs annotations (TTS/MODE/INGREDIENT) telles que stockées. */
-    instructionsWithAnnotations: Array.isArray(instructionsRaw) ? instructionsRaw : [],
+    /**
+     * Étapes brutes quand l'API les renvoie sous forme d'objets annotés. Cette
+     * vue est la projection schema.org : sur fr-FR elle ne rend que du texte,
+     * la liste est alors vide plutôt que de dupliquer `recipeInstructions`.
+     */
+    instructionsWithAnnotations: Array.isArray(instructionsRaw)
+      ? instructionsRaw.filter((s) => s !== null && typeof s === "object")
+      : [],
   };
 }

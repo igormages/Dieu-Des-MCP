@@ -427,6 +427,19 @@ describe("buildInstructionsPayload — usages d’ingrédients (pesée)", () => 
     }
   });
 
+  it("s’ancre sur un nom court (riz, ail, sel)", () => {
+    const { out, links } = usages({
+      text: "Ajouter le riz et le miel, puis cuire.",
+      linkedIngredients: ["riz basmati"],
+    });
+    assert.equal(out.text, "Ajouter le riz et le miel, puis cuire.");
+    assert.equal(links.length, 1);
+    assert.equal(
+      out.text.slice(links[0].position.offset, links[0].position.offset + links[0].position.length),
+      "riz"
+    );
+  });
+
   it("n’ancre pas sur un fragment de mot", () => {
     const idx = indexIngredientsByText(
       buildIngredientsPayload([{ ingredients: [{ name: "sel", quantity: 1, unit: "pincée" }] }])
