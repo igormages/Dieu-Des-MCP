@@ -15,7 +15,9 @@ import {
   indexIngredientsByText,
   isCookidooCustomerRecipeId,
   normalizeCookidooYieldUnitText,
+  normalizeCustomerRecipe,
   type AnnotateIngredientsResponseItem,
+  type CustomerRecipeResponse,
   type IngredientPayload,
 } from "./customer-recipe-payloads";
 import {
@@ -299,13 +301,48 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_get_recipe_detail",
-    "Récupère le détail d'une recette Cookidoo (titre, description, image, durée, ingrédients, étapes via JSON-LD).",
+    "Récupère le détail d'une recette Cookidoo (titre, description, image, durée, ingrédients, étapes). Les recettes officielles ('r96393') passent par le JSON-LD de la page, les recettes perso (ULID) par l'API created-recipes — qui renvoie en plus les annotations brutes des étapes.",
     {
       recipeId: z
         .string()
         .describe("Identifiant Cookidoo de la recette (ex: 'r96393' ou ULID pour recette personnelle)."),
     },
     async ({ recipeId }) => {
+      // Les recettes perso ne sont pas servies par /recipes/recipe/<lang>/<id>
+      // (404 HTML) : elles vivent sous l'API created-recipes.
+      if (isCookidooCustomerRecipeId(recipeId)) {
+        const body = await cookidooRequest<CustomerRecipeResponse>(
+          "GET",
+          `/created-recipes/${COOKIDOO.language}/${recipeId}`,
+          undefined,
+          {
+            skipXsrf: true,
+            referer: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}/${recipeId}`,
+          }
+        );
+        const recipe = normalizeCustomerRecipe(recipeId, body ?? {});
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  id: recipeId,
+                  source: "CUSTOMER",
+                  title: recipe.name,
+                  description: recipe.description,
+                  image: recipe.image,
+                  url: `${COOKIDOO.origin}/created-recipes/${COOKIDOO.language}/${recipeId}`,
+                  recipe,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
       const html = await cookidooGetHtml(`/recipes/recipe/${COOKIDOO.language}/${recipeId}`);
       const ldList = extractJsonLd(html);
       const recipeLd = ldList.find(
@@ -313,6 +350,7 @@ export function registerCookidooTools(server: McpServer): void {
       );
       const summary = {
         id: recipeId,
+        source: "VORWERK",
         title: extractMeta(html, "og:title"),
         description: extractMeta(html, "og:description"),
         image: extractMeta(html, "og:image"),
@@ -987,7 +1025,9 @@ export function registerCookidooTools(server: McpServer): void {
     unit: z
       .string()
       .optional()
-      .describe("Unité (g, ml, kg, c. à soupe…). Normalisée vers le code API VOLUME."),
+      .describe(
+        "Unité (g, ml, kg, c. à soupe…). Normalisée vers le code API VOLUME. Omise avec une quantité → 'pièce' (une unité vide fait échouer le PATCH)."
+      ),
     preparation: z.string().optional().describe("Préparation (ex: 'pelée et coupée en dés')."),
     optional: z.boolean().optional().describe("Si true, l'ingrédient est marqué optionnel."),
   });
@@ -1042,13 +1082,13 @@ export function registerCookidooTools(server: McpServer): void {
     text: z
       .string()
       .describe(
-        "Prose de l’étape. Inclure le texte exact des ingrédients liés (ex. '100 g farine') pour la balance."
+        "Prose de l’étape, écrite naturellement (ex. 'Mettre l’eau et le poivron dans le bol'). Inutile d’y recopier les poids : ils viennent des ingrédients liés."
       ),
     linkedIngredients: z
       .array(z.string())
       .optional()
       .describe(
-        "Textes EXACTS des lignes d’ingrédients à lier dans cette étape (déclenche la balance sur Cookidoo)."
+        "Ingrédients utilisés à cette étape → puce de pesée + balance. Le simple nom suffit ('eau'), le texte complet de la ligne est aussi accepté ; l’ancrage dans le texte est insensible à la casse, aux accents et à l’élision, et l’ingrédient est ajouté en fin d’étape s’il n’y est pas cité."
       ),
     manual: manualSchema.optional(),
     mode: modeSchema.optional(),
@@ -1116,7 +1156,7 @@ export function registerCookidooTools(server: McpServer): void {
 
   server.tool(
     "cookidoo_create_recipe",
-    "Crée une recette perso Cookidoo complète. IMPORTANT : chaque ingrédient pesable doit avoir quantity (+ unit) pour VOLUME ; chaque étape qui utilise un ingrédient doit le lister dans linkedIngredients (texte exact) pour afficher la balance ; les cuissons TM passent par manual (temps/temp/vitesse/sens) ou mode (dough, warm_up, rice_cooker, turbo, steaming, blend, browning) — pas du texte seul.",
+    "Crée une recette perso Cookidoo complète. IMPORTANT : chaque ingrédient pesable doit avoir quantity (+ unit) pour VOLUME ; chaque étape qui utilise un ingrédient doit le lister dans linkedIngredients (son nom suffit) pour afficher le poids et la balance ; les cuissons TM passent par manual (temps/temp/vitesse/sens) ou mode (dough, warm_up, rice_cooker, turbo, steaming, blend, browning) — pas du texte seul.",
     recipePayloadSchema,
     async (input) => {
       const created = await cookidooRequest<{ recipeId?: string }>(
