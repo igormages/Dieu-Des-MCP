@@ -63,4 +63,35 @@ const authHandler = withMcpAuth(handler, verifyBearerToken, {
   resourceMetadataPath: "/.well-known/oauth-protected-resource",
 });
 
-export { authHandler as GET, authHandler as POST, authHandler as DELETE };
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Authorization, Content-Type, Accept, Mcp-Protocol-Version, Mcp-Session-Id",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id, WWW-Authenticate",
+};
+
+function withCors(response: Response): Response {
+  for (const [name, value] of Object.entries(corsHeaders)) {
+    response.headers.set(name, value);
+  }
+  return response;
+}
+
+async function GET(req: Request) {
+  return withCors(await authHandler(req));
+}
+
+async function POST(req: Request) {
+  return withCors(await authHandler(req));
+}
+
+async function DELETE(req: Request) {
+  return withCors(await authHandler(req));
+}
+
+function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders });
+}
+
+export { GET, POST, DELETE, OPTIONS };
