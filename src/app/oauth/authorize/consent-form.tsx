@@ -2,6 +2,7 @@
 
 interface OAuthConsentFormProps {
   clientId: string;
+  clientName?: string;
   redirectUri: string;
   codeChallenge: string;
   codeChallengeMethod: string;
@@ -11,6 +12,7 @@ interface OAuthConsentFormProps {
 
 export function OAuthConsentForm({
   clientId,
+  clientName = "Claude Desktop",
   redirectUri,
   codeChallenge,
   codeChallengeMethod,
@@ -19,9 +21,11 @@ export function OAuthConsentForm({
 }: OAuthConsentFormProps) {
   return (
     <section className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h1 className="text-xl font-bold text-gray-900">Autoriser Claude Desktop</h1>
+      <h1 className="text-xl font-bold text-gray-900">
+        Autoriser {clientName}
+      </h1>
       <p className="mt-2 text-sm text-gray-600">
-        Claude demande l&apos;accès à votre serveur MCP Dieu des MCP.
+        {clientName} demande l&apos;accès à votre serveur MCP Dieu des MCP.
       </p>
 
       <dl className="mt-4 space-y-2 rounded-lg bg-gray-50 p-3 text-sm">
@@ -31,7 +35,7 @@ export function OAuthConsentForm({
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase text-gray-400">Application</dt>
-          <dd className="text-gray-800">Claude Desktop (claude.ai)</dd>
+          <dd className="text-gray-800">{clientName}</dd>
         </div>
       </dl>
 

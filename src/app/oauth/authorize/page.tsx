@@ -1,7 +1,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { getMcpCredentials } from "@/lib/auth/mcp-credentials";
-import { isAllowedRedirectUri } from "@/lib/auth/mcp-oauth";
+import {
+  getRegisteredOAuthClient,
+  isAllowedRedirectUri,
+} from "@/lib/auth/mcp-oauth";
 import { OAuthConsentForm } from "./consent-form";
 
 interface PageProps {
@@ -44,19 +47,20 @@ export default async function OAuthAuthorizePage({ searchParams }: PageProps) {
     );
   }
 
-  if (!isAllowedRedirectUri(redirectUri)) {
+  if (!(await isAllowedRedirectUri(clientId, redirectUri))) {
     return (
       <main className="mx-auto max-w-md px-4 py-16 text-center">
         <h1 className="text-xl font-bold text-red-700">Redirect URI refusée</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Seule l&apos;URI Claude Desktop est autorisée.
+          L&apos;URI de retour ne correspond pas à celle enregistrée par ce client.
         </p>
       </main>
     );
   }
 
   const creds = await getMcpCredentials();
-  if (!creds || creds.clientId !== clientId) {
+  const registeredClient = await getRegisteredOAuthClient(clientId);
+  if (creds?.clientId !== clientId && !registeredClient) {
     return (
       <main className="mx-auto max-w-md px-4 py-16 text-center">
         <h1 className="text-xl font-bold text-red-700">Client ID inconnu</h1>
@@ -81,12 +85,16 @@ export default async function OAuthAuthorizePage({ searchParams }: PageProps) {
     redirect(`/sign-in?redirect_url=${encodeURIComponent(`/oauth/authorize?${returnParams}`)}`);
   }
 
-  if (creds.createdBy !== "env" && creds.createdBy !== userId) {
+  if (
+    creds?.clientId === clientId &&
+    creds.createdBy !== "env" &&
+    creds.createdBy !== userId
+  ) {
     return (
       <main className="mx-auto max-w-md px-4 py-16 text-center">
         <h1 className="text-xl font-bold text-red-700">Accès refusé</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Seul le compte qui a généré ces identifiants peut autoriser Claude.
+          Seul le compte qui a généré ces identifiants peut autoriser ce client.
         </p>
       </main>
     );

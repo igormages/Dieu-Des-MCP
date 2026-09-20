@@ -1,12 +1,13 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getMcpCredentials } from "@/lib/auth/mcp-credentials";
+import { getPublicOrigin } from "mcp-handler";
 import {
-  CLAUDE_REDIRECT_URI,
   generateAuthCode,
+  getRegisteredOAuthClient,
   isAllowedRedirectUri,
   saveAuthCode,
 } from "@/lib/auth/mcp-oauth";
+import { getMcpCredentials } from "@/lib/auth/mcp-credentials";
 
 export async function POST(req: Request) {
   const { userId } = await auth();
@@ -34,16 +35,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Paramètres invalides" }, { status: 400 });
   }
 
-  if (!isAllowedRedirectUri(redirectUri)) {
+  if (!(await isAllowedRedirectUri(clientId, redirectUri))) {
     return NextResponse.json({ error: "Redirect URI non autorisée" }, { status: 400 });
   }
 
   const creds = await getMcpCredentials();
-  if (!creds || creds.clientId !== clientId) {
+  const registeredClient = await getRegisteredOAuthClient(clientId);
+  if (creds?.clientId !== clientId && !registeredClient) {
     return NextResponse.json({ error: "Client ID inconnu" }, { status: 400 });
   }
 
-  if (creds.createdBy !== "env" && creds.createdBy !== userId) {
+  if (creds?.clientId === clientId && creds.createdBy !== "env" && creds.createdBy !== userId) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
   }
 
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
   const target = new URL(redirectUri);
   target.searchParams.set("code", code);
   target.searchParams.set("state", state);
+  target.searchParams.set("iss", getPublicOrigin(req));
 
   // 303 obligatoire : NextResponse.redirect() utilise 307 par défaut, ce qui
   // conserve POST vers le callback Claude (GET uniquement) → "Method Not Allowed".

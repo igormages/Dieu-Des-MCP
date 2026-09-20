@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { verifyMcpClientSecret } from "@/lib/auth/mcp-credentials";
 import {
-  CLAUDE_REDIRECT_URI,
   consumeAuthCode,
   generateAccessToken,
+  getRegisteredOAuthClient,
   isAllowedRedirectUri,
   saveAccessToken,
   verifyPkce,
@@ -44,16 +44,19 @@ export async function POST(req: Request) {
   }
 
   const code = params.get("code");
-  const redirectUri = params.get("redirect_uri") ?? CLAUDE_REDIRECT_URI;
+  const redirectUri = params.get("redirect_uri");
   const clientId = params.get("client_id");
   const codeVerifier = params.get("code_verifier");
   const clientSecret = params.get("client_secret");
 
-  if (!code || !clientId || !codeVerifier) {
-    return oauthError("invalid_request", "code, client_id et code_verifier requis.");
+  if (!code || !clientId || !codeVerifier || !redirectUri) {
+    return oauthError(
+      "invalid_request",
+      "code, client_id, redirect_uri et code_verifier requis."
+    );
   }
 
-  if (!isAllowedRedirectUri(redirectUri)) {
+  if (!(await isAllowedRedirectUri(clientId, redirectUri))) {
     return oauthError("invalid_request", "Redirect URI non autorisée.");
   }
 
@@ -74,6 +77,11 @@ export async function POST(req: Request) {
     const creds = await verifyMcpClientSecret(clientSecret, clientId);
     if (!creds) {
       return oauthError("invalid_client", "Client secret invalide.");
+    }
+  } else {
+    const publicClient = await getRegisteredOAuthClient(clientId);
+    if (!publicClient) {
+      return oauthError("invalid_client", "Un secret client est requis.", 401);
     }
   }
 
