@@ -20,6 +20,32 @@ function registrationError(description: string) {
   );
 }
 
+const ALLOWED_GRANT_TYPES = new Set(["authorization_code", "refresh_token"]);
+
+function isValidGrantTypes(grantTypes: unknown): boolean {
+  if (grantTypes === undefined) return true;
+  if (!Array.isArray(grantTypes) || grantTypes.length === 0) return false;
+  if (!grantTypes.includes("authorization_code")) return false;
+  return grantTypes.every(
+    (grant) => typeof grant === "string" && ALLOWED_GRANT_TYPES.has(grant)
+  );
+}
+
+function isValidResponseTypes(responseTypes: unknown): boolean {
+  if (responseTypes === undefined) return true;
+  if (!Array.isArray(responseTypes) || responseTypes.length === 0) return false;
+  return responseTypes.every(
+    (response) => typeof response === "string" && response === "code"
+  );
+}
+
+function normalizeAuthMethod(authMethod: unknown): string {
+  if (authMethod === undefined || authMethod === null || authMethod === "") {
+    return "none";
+  }
+  return typeof authMethod === "string" ? authMethod : "";
+}
+
 export async function POST(req: Request) {
   const body = (await req.json()) as RegistrationRequest;
   const redirectUris = body.redirect_uris;
@@ -35,20 +61,26 @@ export async function POST(req: Request) {
     return registrationError("redirect_uris doit contenir des URI HTTPS ou loopback valides.");
   }
 
-  const grantTypes = body.grant_types ?? ["authorization_code"];
-  const responseTypes = body.response_types ?? ["code"];
-  const authMethod = body.token_endpoint_auth_method ?? "none";
-  const applicationType = body.application_type ?? "native";
-  if (
-    !Array.isArray(grantTypes) ||
-    grantTypes.some((grant) => grant !== "authorization_code") ||
-    !Array.isArray(responseTypes) ||
-    responseTypes.some((response) => response !== "code") ||
-    authMethod !== "none" ||
-    (applicationType !== "native" && applicationType !== "web")
-  ) {
-    return registrationError("Seul le flux public authorization_code avec PKCE est supporté.");
+  if (!isValidGrantTypes(body.grant_types)) {
+    return registrationError(
+      "grant_types doit inclure authorization_code (refresh_token optionnel)."
+    );
   }
+
+  if (!isValidResponseTypes(body.response_types)) {
+    return registrationError('response_types doit être ["code"].');
+  }
+
+  const authMethod = normalizeAuthMethod(body.token_endpoint_auth_method);
+  if (authMethod !== "none") {
+    return registrationError(
+      "Seuls les clients publics PKCE (token_endpoint_auth_method=none) sont supportés."
+    );
+  }
+
+  const grantTypes = Array.isArray(body.grant_types)
+    ? [...new Set(body.grant_types.filter((g) => typeof g === "string"))]
+    : ["authorization_code"];
 
   const clientName =
     typeof body.client_name === "string" && body.client_name.trim()
@@ -61,7 +93,7 @@ export async function POST(req: Request) {
       client_id: client.clientId,
       client_name: client.clientName,
       redirect_uris: client.redirectUris,
-      grant_types: ["authorization_code"],
+      grant_types: grantTypes,
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     },
