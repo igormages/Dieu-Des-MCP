@@ -4,6 +4,7 @@ import { getMcpCredentials } from "@/lib/auth/mcp-credentials";
 import {
   getRegisteredOAuthClient,
   isAllowedRedirectUri,
+  isExpectedMcpResource,
 } from "@/lib/auth/mcp-oauth";
 import { OAuthConsentForm } from "./consent-form";
 
@@ -42,6 +43,17 @@ export default async function OAuthAuthorizePage({ searchParams }: PageProps) {
         <h1 className="text-xl font-bold text-red-700">Requête OAuth invalide</h1>
         <p className="mt-2 text-sm text-gray-600">
           Paramètres manquants ou incorrects.
+        </p>
+      </main>
+    );
+  }
+
+  if (resource && !isExpectedMcpResource(resource)) {
+    return (
+      <main className="mx-auto max-w-md px-4 py-16 text-center">
+        <h1 className="text-xl font-bold text-red-700">Resource MCP invalide</h1>
+        <p className="mt-2 text-sm text-gray-600">
+          Le paramètre resource doit pointer vers /api/mcp.
         </p>
       </main>
     );

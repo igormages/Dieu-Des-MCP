@@ -60,7 +60,7 @@ const handler = createMcpHandler(
 
 const authHandler = withMcpAuth(handler, verifyBearerToken, {
   required: true,
-  resourceMetadataPath: "/.well-known/oauth-protected-resource",
+  resourceMetadataPath: "/.well-known/oauth-protected-resource/api/mcp",
 });
 
 const corsHeaders = {

@@ -140,12 +140,56 @@ export function isValidOAuthRedirectUri(uri: string): boolean {
   );
 }
 
+function redirectUriMatchesRegistered(
+  registeredUris: string[],
+  uri: string
+): boolean {
+  if (registeredUris.includes(uri)) return true;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+
+  const isLoopback =
+    parsed.protocol === "http:" &&
+    (parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "[::1]");
+  if (!isLoopback) return false;
+
+  return registeredUris.some((registered) => {
+    try {
+      const reg = new URL(registered);
+      if (reg.origin !== parsed.origin) return false;
+      const regPath = reg.pathname.replace(/\/$/, "") || "/";
+      const uriPath = parsed.pathname;
+      return uriPath === regPath || uriPath.startsWith(`${regPath}/`);
+    } catch {
+      return false;
+    }
+  });
+}
+
+export function isExpectedMcpResource(resource: string | null | undefined): boolean {
+  if (!resource) return true;
+  try {
+    const url = new URL(resource);
+    const path = url.pathname.replace(/\/$/, "");
+    return path === "/api/mcp";
+  } catch {
+    return false;
+  }
+}
+
 export async function isAllowedRedirectUri(
   clientId: string,
   uri: string
 ): Promise<boolean> {
   const client = await getRegisteredOAuthClient(clientId);
-  if (client) return client.redirectUris.includes(uri);
+  if (client) return redirectUriMatchesRegistered(client.redirectUris, uri);
 
   if (uri !== CLAUDE_REDIRECT_URI) return false;
   const { getMcpCredentials } = await import("./mcp-credentials");

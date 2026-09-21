@@ -234,6 +234,19 @@ export function McpConnectionPanel({ mcpUrl }: { mcpUrl: string }) {
           )}
         </div>
 
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h3 className="text-sm font-semibold text-amber-900">Codex</h3>
+          <p className="mt-1 text-sm text-amber-900">
+            URL : <code className="rounded bg-amber-100 px-1">{mcpUrl}</code>.
+            Après ajout, cliquez <strong>S&apos;authentifier</strong> pour
+            terminer OAuth (connexion Clerk). Alternative : générez un secret
+            ci-dessus et définissez la variable d&apos;environnement{" "}
+            <code className="rounded bg-amber-100 px-1">MCP_BEARER_TOKEN</code>{" "}
+            sur votre machine (nom de variable dans Codex, pas le secret dans
+            l&apos;UI).
+          </p>
+        </div>
+
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
           <h3 className="text-sm font-semibold text-gray-900">Cursor</h3>
           <p className="mt-1 text-sm text-gray-600">

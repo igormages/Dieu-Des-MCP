@@ -10,6 +10,7 @@ interface RegistrationRequest {
   grant_types?: unknown;
   response_types?: unknown;
   token_endpoint_auth_method?: unknown;
+  application_type?: unknown;
 }
 
 function registrationError(description: string) {
@@ -37,12 +38,14 @@ export async function POST(req: Request) {
   const grantTypes = body.grant_types ?? ["authorization_code"];
   const responseTypes = body.response_types ?? ["code"];
   const authMethod = body.token_endpoint_auth_method ?? "none";
+  const applicationType = body.application_type ?? "native";
   if (
     !Array.isArray(grantTypes) ||
     grantTypes.some((grant) => grant !== "authorization_code") ||
     !Array.isArray(responseTypes) ||
     responseTypes.some((response) => response !== "code") ||
-    authMethod !== "none"
+    authMethod !== "none" ||
+    (applicationType !== "native" && applicationType !== "web")
   ) {
     return registrationError("Seul le flux public authorization_code avec PKCE est supporté.");
   }

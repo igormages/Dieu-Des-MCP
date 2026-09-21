@@ -5,6 +5,7 @@ import {
   generateAccessToken,
   getRegisteredOAuthClient,
   isAllowedRedirectUri,
+  isExpectedMcpResource,
   saveAccessToken,
   verifyPkce,
 } from "@/lib/auth/mcp-oauth";
@@ -48,6 +49,7 @@ export async function POST(req: Request) {
   const clientId = params.get("client_id");
   const codeVerifier = params.get("code_verifier");
   const clientSecret = params.get("client_secret");
+  const resource = params.get("resource");
 
   if (!code || !clientId || !codeVerifier || !redirectUri) {
     return oauthError(
@@ -60,6 +62,10 @@ export async function POST(req: Request) {
     return oauthError("invalid_request", "Redirect URI non autorisée.");
   }
 
+  if (!isExpectedMcpResource(resource)) {
+    return oauthError("invalid_target", "Resource MCP invalide.");
+  }
+
   const pending = await consumeAuthCode(code);
   if (!pending) {
     return oauthError("invalid_grant", "Code d'autorisation invalide ou expiré.");
@@ -67,6 +73,10 @@ export async function POST(req: Request) {
 
   if (pending.clientId !== clientId || pending.redirectUri !== redirectUri) {
     return oauthError("invalid_grant", "Client ou redirect URI incorrect.");
+  }
+
+  if (pending.resource && !isExpectedMcpResource(pending.resource)) {
+    return oauthError("invalid_grant", "Resource MCP incorrecte.");
   }
 
   if (!verifyPkce(codeVerifier, pending.codeChallenge, pending.codeChallengeMethod)) {
